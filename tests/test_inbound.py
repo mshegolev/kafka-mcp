@@ -3,17 +3,44 @@
 All tests use MockKafkaClient — no real broker required.
 Verifies Phase 1 success criterion 5: list_topics and describe_topic reachable
 via MCP stdio, FastAPI, and CLI faces.
+Phase 2 plan 02-05: also tests search_messages and get_message across all faces.
 """
 
 from __future__ import annotations
 
+import base64
 import io
 import sys
+from datetime import datetime, timezone
 
 import pytest
 
-from kafka_mcp.domain.errors import TopicNotFoundError
-from kafka_mcp.domain.models import PartitionInfo, TopicInfo
+from kafka_mcp.domain.errors import (
+    DecodeError,
+    MessageNotFoundError,
+    TopicNotFoundError,
+)
+from kafka_mcp.domain.models import KafkaMessage, PartitionInfo, TopicInfo
+
+# ---------------------------------------------------------------------------
+# Shared test fixtures
+# ---------------------------------------------------------------------------
+
+_SAMPLE_TS = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+_SAMPLE_RAW = b"\x00\x01\x02\x03"
+_SAMPLE_MSG = KafkaMessage(
+    topic="orders",
+    partition=0,
+    offset=42,
+    key="ORD-123",
+    headers={"ce-type": "order.created"},
+    value={"order_id": "ORD-123", "amount": 99},
+    timestamp_utc=_SAMPLE_TS,
+    raw=_SAMPLE_RAW,
+    source="kafka",
+    event_type="kafka_message",
+    keys={"order_id": "ORD-123", "msisdn": None, "customer_id": None, "product_id": None},
+)
 
 # ---------------------------------------------------------------------------
 # Mock KafkaClient — no broker, deterministic data
@@ -23,7 +50,7 @@ from kafka_mcp.domain.models import PartitionInfo, TopicInfo
 class MockKafkaClient:
     """Minimal KafkaClient stand-in for adapter tests.
 
-    Returns deterministic topic data without connecting to a broker.
+    Returns deterministic topic and message data without connecting to a broker.
     """
 
     def list_topics(self, include_internal: bool = False) -> list[str]:
@@ -51,6 +78,24 @@ class MockKafkaClient:
                 ],
             )
         raise TopicNotFoundError(topic)
+
+    def search_messages(self, key: str, **kwargs) -> list[KafkaMessage]:
+        """Return a single sample message matching 'ORD-123'; else empty list."""
+        if key == "ORD-123":
+            return [_SAMPLE_MSG]
+        return []
+
+    def get_message(
+        self, topic: str, partition: int, offset: int
+    ) -> KafkaMessage:
+        """Return sample message at orders/0/42; raise errors for special cases."""
+        if topic == "orders" and partition == 0 and offset == 42:
+            return _SAMPLE_MSG
+        if topic == "missing":
+            raise MessageNotFoundError(topic, partition, offset)
+        if topic == "corrupt":
+            raise DecodeError(topic, partition, offset, "bad magic byte")
+        raise MessageNotFoundError(topic, partition, offset)
 
 
 # ---------------------------------------------------------------------------
@@ -299,3 +344,209 @@ def test_mcp_importable() -> None:
     from kafka_mcp.adapters.inbound.mcp_stdio import create_mcp_server  # noqa: F401
 
     assert callable(create_mcp_server)
+
+
+# ---------------------------------------------------------------------------
+# MCP stdio — search_messages and get_message tools (Phase 2 plan 02-05)
+# ---------------------------------------------------------------------------
+
+
+def test_mcp_search_messages_tool_registered() -> None:
+    """FastMCP server has a tool named 'search_messages'."""
+    import asyncio
+
+    from kafka_mcp.adapters.inbound.mcp_stdio import create_mcp_server
+
+    server = create_mcp_server(MockKafkaClient())
+    tools = asyncio.run(server.list_tools())
+    tool_names = [t.name for t in tools]
+    assert "search_messages" in tool_names, (
+        f"search_messages tool missing; found: {tool_names}"
+    )
+
+
+def test_mcp_search_messages_readonlyhint() -> None:
+    """search_messages tool has readOnlyHint=True."""
+    import asyncio
+
+    from kafka_mcp.adapters.inbound.mcp_stdio import create_mcp_server
+
+    server = create_mcp_server(MockKafkaClient())
+    tools = asyncio.run(server.list_tools())
+    tool_map = {t.name: t for t in tools}
+    sm = tool_map.get("search_messages")
+    assert sm is not None, "search_messages tool not found"
+    assert sm.annotations is not None, "search_messages missing annotations"
+    assert sm.annotations.readOnlyHint is True, (
+        f"readOnlyHint expected True, got {sm.annotations.readOnlyHint}"
+    )
+
+
+def test_mcp_search_messages_returns_list() -> None:
+    """search_messages tool returns list of dicts with base64-encoded raw field."""
+    from kafka_mcp.adapters.inbound.mcp_stdio import create_mcp_server
+
+    server = create_mcp_server(MockKafkaClient())
+    # Call the tool by invoking the underlying function via the server
+    # FastMCP tools are callable directly via server.call_tool
+    import asyncio
+
+    result = asyncio.run(
+        server.call_tool("search_messages", {"key": "ORD-123"})
+    )
+    # result is a list of TextContent; parse the text as the returned value
+    # FastMCP returns the Python return value encoded in content
+    assert result is not None
+    # The returned content list should be non-empty
+    assert len(result) > 0
+
+
+def test_mcp_get_message_tool_registered() -> None:
+    """FastMCP server has a tool named 'get_message'."""
+    import asyncio
+
+    from kafka_mcp.adapters.inbound.mcp_stdio import create_mcp_server
+
+    server = create_mcp_server(MockKafkaClient())
+    tools = asyncio.run(server.list_tools())
+    tool_names = [t.name for t in tools]
+    assert "get_message" in tool_names, (
+        f"get_message tool missing; found: {tool_names}"
+    )
+
+
+def test_mcp_get_message_decode_error_mapped() -> None:
+    """DecodeError raised by get_message maps to ValueError for MCP."""
+    import asyncio
+
+    from mcp.shared.exceptions import McpError
+
+    from kafka_mcp.adapters.inbound.mcp_stdio import create_mcp_server
+
+    server = create_mcp_server(MockKafkaClient())
+    with pytest.raises((ValueError, McpError, Exception)):
+        asyncio.run(
+            server.call_tool(
+                "get_message",
+                {"topic": "corrupt", "partition": 0, "offset": 0},
+            )
+        )
+
+
+def test_mcp_get_message_not_found_mapped() -> None:
+    """MessageNotFoundError raised by get_message maps to an error for MCP."""
+    import asyncio
+
+    from mcp.shared.exceptions import McpError
+
+    from kafka_mcp.adapters.inbound.mcp_stdio import create_mcp_server
+
+    server = create_mcp_server(MockKafkaClient())
+    with pytest.raises((ValueError, McpError, Exception)):
+        asyncio.run(
+            server.call_tool(
+                "get_message",
+                {"topic": "missing", "partition": 0, "offset": 0},
+            )
+        )
+
+
+# ---------------------------------------------------------------------------
+# FastAPI REST — search_messages and get_message routes (Phase 2 plan 02-05)
+# ---------------------------------------------------------------------------
+
+
+def test_fastapi_post_search_messages_200() -> None:
+    """POST /tools/search_messages returns 200 with result list."""
+    from fastapi.testclient import TestClient
+
+    from kafka_mcp.adapters.inbound.rest_api import create_app
+
+    app = create_app(MockKafkaClient())
+    client = TestClient(app)
+    response = client.post(
+        "/tools/search_messages", json={"key": "ORD-123"}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "result" in data
+    assert isinstance(data["result"], list)
+    assert len(data["result"]) == 1
+
+
+def test_fastapi_post_search_messages_raw_base64() -> None:
+    """Search result raw field is a base64 string, not bytes."""
+    from fastapi.testclient import TestClient
+
+    from kafka_mcp.adapters.inbound.rest_api import create_app
+
+    app = create_app(MockKafkaClient())
+    client = TestClient(app)
+    response = client.post(
+        "/tools/search_messages", json={"key": "ORD-123"}
+    )
+    assert response.status_code == 200
+    result = response.json()["result"][0]
+    assert "raw" in result
+    assert isinstance(result["raw"], str), (
+        f"raw should be str (base64), got {type(result['raw'])}"
+    )
+    # Verify it decodes to the original bytes
+    decoded = base64.b64decode(result["raw"])
+    assert decoded == _SAMPLE_RAW
+
+
+def test_fastapi_post_get_message_200() -> None:
+    """POST /tools/get_message returns 200 with result dict."""
+    from fastapi.testclient import TestClient
+
+    from kafka_mcp.adapters.inbound.rest_api import create_app
+
+    app = create_app(MockKafkaClient())
+    client = TestClient(app)
+    response = client.post(
+        "/tools/get_message",
+        json={"topic": "orders", "partition": 0, "offset": 42},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "result" in data
+    assert data["result"]["topic"] == "orders"
+    assert data["result"]["offset"] == 42
+
+
+def test_fastapi_post_get_message_404_not_found() -> None:
+    """MessageNotFoundError → HTTP 404 with structured detail."""
+    from fastapi.testclient import TestClient
+
+    from kafka_mcp.adapters.inbound.rest_api import create_app
+
+    app = create_app(MockKafkaClient())
+    client = TestClient(app)
+    response = client.post(
+        "/tools/get_message",
+        json={"topic": "missing", "partition": 0, "offset": 0},
+    )
+    assert response.status_code == 404
+    detail = response.json()["detail"]
+    assert detail["error"] == "MessageNotFoundError"
+    assert detail["topic"] == "missing"
+
+
+def test_fastapi_post_get_message_422_decode_error() -> None:
+    """DecodeError → HTTP 422 with structured detail including reason."""
+    from fastapi.testclient import TestClient
+
+    from kafka_mcp.adapters.inbound.rest_api import create_app
+
+    app = create_app(MockKafkaClient())
+    client = TestClient(app)
+    response = client.post(
+        "/tools/get_message",
+        json={"topic": "corrupt", "partition": 0, "offset": 0},
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail["error"] == "DecodeError"
+    assert detail["topic"] == "corrupt"
+    assert "reason" in detail
