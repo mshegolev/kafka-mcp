@@ -98,6 +98,9 @@ class TestConsumerPort:
             ) -> tuple[int, int]:
                 return (0, 0)
 
+            def get_partition_ids(self, topic: str) -> list[int]:
+                return [0]
+
         assert isinstance(MockConsumer(), ConsumerPort)
 
     def test_non_compliant_class_fails_isinstance(self) -> None:

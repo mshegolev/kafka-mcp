@@ -46,14 +46,27 @@ class KafkaMcpSettings(BaseSettings):
         try:
             super().__init__(**data)
         except ValidationError as exc:
-            # Extract the first ConfigError message from pydantic's error list.
+            # Convert any field-level error into a ConfigError so callers
+            # have a single domain-typed exception to handle (D-04).
             for error in exc.errors():
-                if error.get("type") == "value_error":
+                err_type = error.get("type", "")
+                loc = error.get("loc", ())
+                field = loc[0] if loc else "unknown"
+
+                if err_type == "missing":
+                    # Required env var not set — name the missing key
+                    env_key = f"KAFKA_MCP_{str(field).upper()}"
+                    raise ConfigError(
+                        f"{env_key} is required but was not set"
+                    ) from exc
+
+                if err_type == "value_error":
                     msg = error.get("msg", str(exc))
                     # pydantic prefixes with "Value error, " — strip if present
                     msg = msg.removeprefix("Value error, ")
                     raise ConfigError(msg) from exc
-            # No ConfigError inside — re-raise the ValidationError as-is
+
+            # No recognised error type — re-raise ValidationError as-is
             raise
 
     model_config = SettingsConfigDict(
