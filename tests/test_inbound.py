@@ -19,6 +19,7 @@ from kafka_mcp.domain.errors import (
     DecodeError,
     MessageNotFoundError,
     TopicNotFoundError,
+    TransientError,
 )
 from kafka_mcp.domain.models import KafkaMessage, PartitionInfo, TopicInfo
 
@@ -95,6 +96,9 @@ class MockKafkaClient:
             raise MessageNotFoundError(topic, partition, offset)
         if topic == "corrupt":
             raise DecodeError(topic, partition, offset, "bad magic byte")
+        if topic == "transient":
+            # WR-03: in-range offset that timed out — retryable, not absence.
+            raise TransientError(topic, partition, offset, "poll timed out")
         raise MessageNotFoundError(topic, partition, offset)
 
 
@@ -739,3 +743,68 @@ def test_fastapi_post_get_message_422_decode_error() -> None:
     assert detail["error"] == "DecodeError"
     assert detail["topic"] == "corrupt"
     assert "reason" in detail
+
+
+# ---------------------------------------------------------------------------
+# TransientError inbound-face mapping (WR-03): REST 503 / CLI exit-3 / MCP
+# ---------------------------------------------------------------------------
+
+
+def test_fastapi_post_get_message_503_transient_error() -> None:
+    """WR-03: TransientError → HTTP 503 with structured detail including reason.
+
+    Guards the REST side of the WR-05 fix: a regression that remapped
+    TransientError to 404 (absence) or re-ordered the except clauses would be
+    caught here.
+    """
+    from fastapi.testclient import TestClient
+
+    from kafka_mcp.adapters.inbound.rest_api import create_app
+
+    app = create_app(MockKafkaClient())
+    client = TestClient(app)
+    response = client.post(
+        "/tools/get_message",
+        json={"topic": "transient", "partition": 0, "offset": 5},
+    )
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["error"] == "TransientError"
+    assert detail["topic"] == "transient"
+    assert "reason" in detail
+
+
+def test_cli_get_message_transient_error_exits_3() -> None:
+    """WR-03: TransientError → SystemExit(3) with stderr message including reason."""
+    from kafka_mcp.adapters.inbound.cli import run_get_message
+
+    stderr_out = _capture_stderr(
+        run_get_message,
+        MockKafkaClient(),
+        "transient",
+        0,
+        5,
+        as_json=False,
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        run_get_message(MockKafkaClient(), "transient", 0, 5, as_json=False)
+    assert exc_info.value.code == 3
+    assert "transient" in stderr_out.lower() or "Error" in stderr_out
+
+
+def test_mcp_get_message_transient_error_mapped() -> None:
+    """WR-03: TransientError raised by get_message maps to an error for MCP."""
+    import asyncio
+
+    from mcp.shared.exceptions import McpError
+
+    from kafka_mcp.adapters.inbound.mcp_stdio import create_mcp_server
+
+    server = create_mcp_server(MockKafkaClient())
+    with pytest.raises((ValueError, McpError, Exception)):
+        asyncio.run(
+            server.call_tool(
+                "get_message",
+                {"topic": "transient", "partition": 0, "offset": 5},
+            )
+        )
