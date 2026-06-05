@@ -255,8 +255,14 @@ class ConfluentConsumerAdapter:
                 # wall-clock now; note: subject to clock-skew (D-context).
                 ts_utc = datetime.now(tz=timezone.utc)
 
-            if time_to is not None and ts_utc > time_to:
-                break
+            # WR-02: Kafka offsets are not strictly ordered by CreateTime, so a
+            # single out-of-window message must NOT terminate the scan (that
+            # would silently drop later in-window messages). Skip it and keep
+            # scanning; stop_offset / max_scan / limit drive termination.
+            # WR-03: time_to is documented as the EXCLUSIVE end of the window,
+            # so a message whose timestamp equals time_to is excluded (>=).
+            if time_to is not None and ts_utc >= time_to:
+                continue
 
             # --- key (best-effort UTF-8, T-02-03-D) ---
             raw_key = msg.key()

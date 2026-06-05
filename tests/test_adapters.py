@@ -1044,18 +1044,18 @@ class TestFetchMessages:
 
         assert len(result) == 3
 
-    def test_fetch_messages_stops_at_time_to(self) -> None:
-        """Messages with timestamp_utc > time_to are excluded and scan stops."""
+    def test_fetch_messages_excludes_messages_at_or_after_time_to(self) -> None:
+        """WR-03: time_to is exclusive — a message at exactly time_to is dropped."""
         from datetime import datetime, timezone
 
         mock_consumer = MagicMock()
-        # msg0: at 1000s — within time_to of 1500s
+        # msg0: at 1000s — strictly within time_to of 1500s
         msg0 = _make_msg_mock(
             offset=0, timestamp_type=1, timestamp_ms=1_000_000
         )
-        # msg1: at 2000s — exceeds time_to of 1.5s epoch → 1500000ms
+        # msg1: at exactly 1500s — equals time_to → excluded (exclusive bound)
         msg1 = _make_msg_mock(
-            offset=1, timestamp_type=1, timestamp_ms=2_000_000
+            offset=1, timestamp_type=1, timestamp_ms=1_500_000
         )
         mock_consumer.poll.side_effect = [msg0, msg1, None]
         adapter = _make_consumer_adapter(mock_consumer)
@@ -1070,9 +1070,46 @@ class TestFetchMessages:
             limit=100,
         )
 
-        # Only the first message (within time_to) should be returned
+        # Only the first message (strictly before time_to) should be returned
         assert len(result) == 1
         assert result[0].offset == 0
+
+    def test_fetch_messages_out_of_order_timestamp_does_not_truncate(self) -> None:
+        """WR-02: an out-of-window message must NOT stop the scan.
+
+        Offsets are not strictly timestamp-ordered. A future-dated message at
+        offset 1 must be skipped while a later in-window message at offset 2 is
+        still returned (the old `break` would drop offset 2).
+        """
+        from datetime import datetime, timezone
+
+        mock_consumer = MagicMock()
+        msg0 = _make_msg_mock(
+            offset=0, timestamp_type=1, timestamp_ms=1_000_000
+        )
+        # offset 1 is out of window (future-dated) — must be skipped, not break
+        msg1 = _make_msg_mock(
+            offset=1, timestamp_type=1, timestamp_ms=9_000_000
+        )
+        # offset 2 is back in window — must still be returned
+        msg2 = _make_msg_mock(
+            offset=2, timestamp_type=1, timestamp_ms=1_200_000
+        )
+        mock_consumer.poll.side_effect = [msg0, msg1, msg2, None]
+        adapter = _make_consumer_adapter(mock_consumer)
+
+        time_to = datetime.fromtimestamp(1500.0, tz=timezone.utc)
+        result = adapter.fetch_messages(
+            topic="orders",
+            partition=0,
+            start_offset=0,
+            stop_offset=1000,
+            time_to=time_to,
+            limit=100,
+        )
+
+        offsets = [m.offset for m in result]
+        assert offsets == [0, 2]
 
     def test_fetch_messages_timestamp_utc_from_create_time(self) -> None:
         """TIMESTAMP_CREATE_TIME → UTC-aware datetime derived from ms correctly."""
