@@ -8,7 +8,6 @@ tests/test_lib.py (Phase 1 SC-3).
 
 from __future__ import annotations
 
-from kafka_mcp.domain.errors import TopicNotFoundError
 from kafka_mcp.domain.models import PartitionInfo, TopicInfo
 from kafka_mcp.ports.consumer import ConsumerPort
 

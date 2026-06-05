@@ -11,10 +11,6 @@ Authorization header.
 
 from __future__ import annotations
 
-import httpx
-
-from kafka_mcp.ports.schema_registry import SchemaRegistryPort
-
 
 class SchemaRegistryHttpAdapter:
     """Stub HTTP adapter for the Confluent Schema Registry.
