@@ -16,11 +16,12 @@ and never stored or logged.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from types import TracebackType
 from uuid import uuid4
 
-from confluent_kafka import Consumer, KafkaError, KafkaException
+from confluent_kafka import Consumer, KafkaError, KafkaException, TopicPartition
+from confluent_kafka import TIMESTAMP_CREATE_TIME
 
 from kafka_mcp.config import KafkaMcpSettings
 from kafka_mcp.domain.errors import MessageNotFoundError, TopicNotFoundError
@@ -197,15 +198,102 @@ class ConfluentConsumerAdapter:
         """Consume messages from [start_offset, stop_offset) bounded by
         time_to and limit.
 
-        Phase 2 stub — full implementation delivered in plan 02-02
-        (ConfluentConsumerAdapter Phase 2 extension).
+        Uses assign() to seek to start_offset; never uses the group-based
+        subscription API and never commits offsets (assign-only, KAFKA-06).
 
-        Returns KafkaMessage objects with raw bytes; decode is NOT performed.
-        Never commits offsets (assign-based, KAFKA-06).
+        Scan terminates when any of the following is true:
+        - Consumer.poll() returns None (end of partition or timeout)
+        - Message.error() is truthy (transient error — return partial result)
+        - msg.offset() >= stop_offset
+        - Per-partition scan counter exceeds self._settings.max_scan
+          (T-02-03-A DoS guard)
+        - msg.timestamp_utc > time_to (when time_to is not None)
+        - len(result) >= limit
+
+        Args:
+            topic: Topic name.
+            partition: Partition index (0-based).
+            start_offset: Inclusive start offset for the scan.
+            stop_offset: Exclusive stop offset for the scan.
+            time_to: Optional UTC-aware datetime upper bound on timestamps.
+            limit: Maximum messages to return from this call.
+
+        Returns:
+            List of KafkaMessage objects (may be empty). value is always
+            None — decode is performed by the SchemaRegistryHttpAdapter
+            in the domain service (plan 02-04).
         """
-        raise NotImplementedError(
-            "fetch_messages not yet implemented — see plan 02-02"
-        )
+        tp = TopicPartition(topic, partition, start_offset)
+        self._consumer.assign([tp])
+
+        result: list[KafkaMessage] = []
+        scan_count = 0
+
+        while True:
+            msg = self._consumer.poll(
+                timeout=self._settings.poll_timeout
+            )
+            if msg is None:
+                break
+            if msg.error():
+                break
+            if msg.offset() >= stop_offset:
+                break
+
+            scan_count += 1
+            if scan_count > self._settings.max_scan:
+                break
+
+            # --- timestamp extraction (T-02-03-B, clock-skew note) ---
+            ts_type, ts_ms = msg.timestamp()
+            if ts_type == TIMESTAMP_CREATE_TIME and ts_ms > 0:
+                ts_utc = datetime.fromtimestamp(
+                    ts_ms / 1000.0, tz=timezone.utc
+                )
+            else:
+                # LogAppendTime or TIMESTAMP_NOT_AVAILABLE — fallback to
+                # wall-clock now; note: subject to clock-skew (D-context).
+                ts_utc = datetime.now(tz=timezone.utc)
+
+            if time_to is not None and ts_utc > time_to:
+                break
+
+            # --- key (best-effort UTF-8, T-02-03-D) ---
+            raw_key = msg.key()
+            key_str: str | None = (
+                raw_key.decode("utf-8", errors="replace")
+                if raw_key is not None
+                else None
+            )
+
+            # --- headers (best-effort UTF-8, T-02-03-D) ---
+            raw_headers = msg.headers()
+            headers_dict: dict[str, str] = {}
+            if raw_headers:
+                for name, val in raw_headers:
+                    headers_dict[name] = (
+                        val.decode("utf-8", errors="replace")
+                        if isinstance(val, bytes)
+                        else str(val)
+                    )
+
+            result.append(
+                KafkaMessage(
+                    topic=topic,
+                    partition=partition,
+                    offset=msg.offset(),
+                    key=key_str,
+                    headers=headers_dict,
+                    value=None,
+                    timestamp_utc=ts_utc,
+                    raw=msg.value() or b"",
+                )
+            )
+
+            if len(result) >= limit:
+                break
+
+        return result
 
     def fetch_message(
         self,
