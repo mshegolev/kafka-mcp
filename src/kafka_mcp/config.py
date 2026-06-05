@@ -141,7 +141,7 @@ class KafkaMcpSettings(BaseSettings):
     # ------------------------------------------------------------------ #
 
     @model_validator(mode="after")
-    def _require_bootstrap_servers(self) -> "KafkaMcpSettings":
+    def _require_bootstrap_servers(self) -> KafkaMcpSettings:
         """Fail fast if bootstrap_servers is absent or whitespace-only.
 
         Raises:

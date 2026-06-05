@@ -196,7 +196,7 @@ class ConfluentConsumerAdapter:
         """
         self._consumer.close()
 
-    def __enter__(self) -> "ConfluentConsumerAdapter":
+    def __enter__(self) -> ConfluentConsumerAdapter:
         return self
 
     def __exit__(

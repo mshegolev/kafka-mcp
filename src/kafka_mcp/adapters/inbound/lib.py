@@ -130,7 +130,7 @@ ConfluentConsumerAdapter`.
         if callable(close):
             close()
 
-    def __enter__(self) -> "KafkaClient":
+    def __enter__(self) -> KafkaClient:
         return self
 
     def __exit__(
