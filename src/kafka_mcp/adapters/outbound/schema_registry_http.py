@@ -11,12 +11,13 @@ Protobuf decode (generic, no pre-compiled classes):
     byte is the common "first message" shorthand) followed by the serialized
     message bytes.
   - The registered ``.proto`` source (``schema.schema_str``) is compiled to a
-    ``FileDescriptorSet`` at decode time via the ``protoc`` binary, loaded into
-    a private ``DescriptorPool``, and the concrete message type selected by the
-    message-index path. The message is then parsed and rendered to a plain dict
-    via ``MessageToDict``.
-  - If ``protoc`` is unavailable, or the message-index path cannot be resolved,
-    a typed ``DecodeError`` is raised (never an unhandled exception). See
+    ``FileDescriptorSet`` at decode time via the in-process ``grpc_tools.protoc``
+    compiler (a pip-installable wheel that vendors ``protoc`` — no system binary
+    on PATH required), loaded into a private ``DescriptorPool``, and the concrete
+    message type selected by the message-index path. The message is then parsed
+    and rendered to a plain dict via ``MessageToDict``.
+  - If the message-index path cannot be resolved, or the compile fails / times
+    out, a typed ``DecodeError`` is raised (never an unhandled exception). See
     ``_decode_protobuf`` for the precise limitation notes.
 
 Security (T-02-02-B):
@@ -32,9 +33,8 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
-import subprocess
 import tempfile
+import threading
 
 from confluent_kafka.schema_registry import Schema, SchemaRegistryClient
 from confluent_kafka.schema_registry.avro import AvroDeserializer
@@ -44,6 +44,11 @@ from kafka_mcp.domain.errors import DecodeError
 # Confluent wire-format framing: 1 magic byte + 4-byte big-endian schema_id
 _MAGIC_BYTE = 0x00
 _FRAMING_HEADER_LEN = 5  # magic(1) + schema_id(4)
+
+# WR-04: bound the in-process protoc compile so a hostile/pathological .proto
+# (fetched by a schema_id taken from untrusted message wire bytes) cannot wedge
+# the calling worker thread indefinitely. A timeout maps to a typed DecodeError.
+_PROTOC_TIMEOUT_SECONDS = 10.0
 
 
 class SchemaRegistryHttpAdapter:
@@ -219,17 +224,19 @@ class SchemaRegistryHttpAdapter:
              Protobuf message-index header (varint count + that many varint
              indices; a single 0x00 byte is the "first message" shorthand).
           2. Compile ``schema.schema_str`` (the registered ``.proto`` source)
-             to a ``FileDescriptorSet`` via the ``protoc`` binary, load it into
-             a private ``DescriptorPool``, and resolve the concrete message
-             type by walking the message-index path over the file's top-level
-             message types.
+             to a ``FileDescriptorSet`` via the in-process ``grpc_tools.protoc``
+             compiler, load it into a private ``DescriptorPool``, and resolve
+             the concrete message type by walking the message-index path over
+             the file's top-level message types.
           3. Build a dynamic message class via ``message_factory``, parse the
              remaining bytes, and render to a dict via ``MessageToDict``.
 
-        Limitation: requires a ``protoc`` binary on PATH. When it is absent (or
-        the schema references imports we cannot resolve), a typed DecodeError is
-        raised — never an unhandled exception (T-02-02-D). Pre-compiled message
-        types are NOT required.
+        Limitation: the schema must be self-contained — if it references imports
+        we cannot resolve (or the compile times out / fails), a typed DecodeError
+        is raised — never an unhandled exception (T-02-02-D). The ``protoc``
+        compiler is vendored by ``grpcio-tools`` (a declared pip dependency), so
+        no system binary on PATH is required. Pre-compiled message types are NOT
+        required.
         """
         try:
             index_path, payload = _strip_protobuf_index_header(
@@ -247,7 +254,12 @@ class SchemaRegistryHttpAdapter:
 
             from google.protobuf.json_format import MessageToDict
 
-            return MessageToDict(message)
+            # WR-05: preserve the registered .proto snake_case field names (the
+            # proto3 JSON default lowerCamelCases them). This keeps the Protobuf
+            # decode output consistent with the Avro path so nested dotted-path
+            # matching (e.g. value:payload.order_id) resolves on both. (proto3
+            # int64/uint64/fixed64/bytes still JSON-map to strings by spec.)
+            return MessageToDict(message, preserving_proto_field_name=True)
         except DecodeError:
             raise
         except Exception as exc:
@@ -259,9 +271,16 @@ class SchemaRegistryHttpAdapter:
     def _compile_proto_descriptor(self, schema: Schema):
         """Compile a registered ``.proto`` schema to a FileDescriptor.
 
-        Uses the ``protoc`` binary to emit a FileDescriptorSet, then loads it
-        into this adapter's private DescriptorPool (cached per schema_str so a
-        given schema is compiled at most once per adapter lifetime).
+        Uses the in-process ``grpc_tools.protoc`` compiler (a pip-installable
+        wheel vendoring ``protoc`` — WR-01: no system binary on PATH required)
+        to emit a FileDescriptorSet, then loads it into this adapter's private
+        DescriptorPool (cached per schema_str so a given schema is compiled at
+        most once per adapter lifetime).
+
+        WR-04: the compile runs on a daemon worker thread bounded by
+        ``_PROTOC_TIMEOUT_SECONDS`` so a hostile/pathological schema cannot wedge
+        the calling thread indefinitely. A timeout raises a RuntimeError the
+        caller wraps as a typed DecodeError.
 
         Raises:
             DecodeError-friendly RuntimeError on failure (the caller wraps it).
@@ -271,37 +290,18 @@ class SchemaRegistryHttpAdapter:
         if cached is not None:
             return cached
 
-        protoc = shutil.which("protoc")
-        if protoc is None:
-            raise RuntimeError(
-                "protoc binary not found on PATH; generic protobuf decode "
-                "requires protoc to compile the registered .proto schema"
-            )
-
         from google.protobuf import descriptor_pb2, descriptor_pool
 
+        # tempfile.TemporaryDirectory() is 0700 (no race); --proto_path is pinned
+        # to it and the argv is fixed, so schema_str only reaches the compiler as
+        # file content (no shell, no injection).
         with tempfile.TemporaryDirectory() as tmpdir:
             proto_path = os.path.join(tmpdir, "schema.proto")
             out_path = os.path.join(tmpdir, "schema.desc")
             with open(proto_path, "w", encoding="utf-8") as fh:
                 fh.write(schema_str)
 
-            completed = subprocess.run(
-                [
-                    protoc,
-                    f"--proto_path={tmpdir}",
-                    f"--descriptor_set_out={out_path}",
-                    "--include_imports",
-                    proto_path,
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if completed.returncode != 0:
-                raise RuntimeError(
-                    f"protoc failed: {completed.stderr.strip()}"
-                )
+            self._run_protoc_bounded(tmpdir, proto_path, out_path)
 
             with open(out_path, "rb") as fh:
                 fds = descriptor_pb2.FileDescriptorSet()
@@ -319,6 +319,57 @@ class SchemaRegistryHttpAdapter:
 
         self._proto_descriptor_cache[schema_str] = file_descriptor
         return file_descriptor
+
+    @staticmethod
+    def _run_protoc_bounded(
+        tmpdir: str, proto_path: str, out_path: str
+    ) -> None:
+        """Run the in-process ``grpc_tools.protoc`` compiler with a time bound.
+
+        WR-01: invokes ``grpc_tools.protoc.main`` (vendored compiler, no system
+        binary) rather than shelling out to a ``protoc`` on PATH.
+        WR-04: the compile is executed on a daemon worker thread joined with a
+        ``_PROTOC_TIMEOUT_SECONDS`` budget; on timeout a RuntimeError is raised
+        (the caller maps it to a typed DecodeError). The daemon thread cannot
+        block interpreter shutdown if it is still running.
+
+        Raises:
+            RuntimeError: when the compiler returns non-zero, times out, or
+            raises (the caller wraps it as a DecodeError).
+        """
+        from grpc_tools import protoc as _protoc
+
+        argv = [
+            "protoc",
+            f"--proto_path={tmpdir}",
+            f"--descriptor_set_out={out_path}",
+            "--include_imports",
+            proto_path,
+        ]
+        result: dict[str, object] = {}
+
+        def _compile() -> None:
+            try:
+                result["rc"] = _protoc.main(argv)
+            except BaseException as exc:  # noqa: BLE001 - reported to caller
+                result["exc"] = exc
+
+        worker = threading.Thread(target=_compile, daemon=True)
+        worker.start()
+        worker.join(_PROTOC_TIMEOUT_SECONDS)
+        if worker.is_alive():
+            raise RuntimeError(
+                f"protoc timed out compiling schema after "
+                f"{_PROTOC_TIMEOUT_SECONDS:g}s"
+            )
+        if "exc" in result:
+            raise RuntimeError(
+                f"protoc (grpc_tools) raised: {result['exc']}"
+            )
+        if result.get("rc", 1) != 0:
+            raise RuntimeError(
+                f"protoc (grpc_tools) failed with rc={result.get('rc')}"
+            )
 
     def _decode_json(
         self, raw: bytes, topic: str, partition: int, offset: int

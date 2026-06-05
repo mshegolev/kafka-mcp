@@ -12,7 +12,6 @@ Covers:
 
 from __future__ import annotations
 
-import shutil
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -807,27 +806,28 @@ def _build_protobuf_payload(
     exercised end-to-end (CR-01).
     """
     import os
-    import subprocess
     import tempfile
 
     from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
+    from grpc_tools import protoc as _protoc
 
     with tempfile.TemporaryDirectory() as td:
         pp = os.path.join(td, "s.proto")
         op = os.path.join(td, "s.desc")
         with open(pp, "w", encoding="utf-8") as fh:
             fh.write(proto_src)
-        subprocess.run(
+        # WR-01: compile via the in-process grpc_tools.protoc (vendored
+        # compiler), matching the adapter — no system protoc binary required.
+        rc = _protoc.main(
             [
                 "protoc",
                 f"--proto_path={td}",
                 f"--descriptor_set_out={op}",
                 "--include_imports",
                 pp,
-            ],
-            check=True,
-            capture_output=True,
+            ]
         )
+        assert rc == 0, f"grpc_tools.protoc failed (rc={rc})"
         fds = descriptor_pb2.FileDescriptorSet()
         with open(op, "rb") as fh:
             fds.ParseFromString(fh.read())
@@ -845,16 +845,41 @@ def _build_protobuf_payload(
     return b"\x00" + schema_id.to_bytes(4, "big") + b"\x00" + payload
 
 
+def _grpc_tools_available() -> bool:
+    """True when the in-process grpc_tools.protoc compiler is importable.
+
+    WR-01: the adapter now compiles via grpc_tools (a declared pip dependency)
+    rather than a system ``protoc`` binary, so the decode path is exercisable on
+    any host with the wheel installed — no PATH binary required.
+    """
+    try:
+        import grpc_tools.protoc  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
 @pytest.mark.skipif(
-    shutil.which("protoc") is None,
-    reason="protoc binary required for generic protobuf decode",
+    not _grpc_tools_available(),
+    reason="grpcio-tools required for generic protobuf decode",
 )
 class TestSchemaRegistryDecodeProtobuf:
-    """Confluent-framed Protobuf payloads decoded via real protoc compilation."""
+    """Confluent-framed Protobuf payloads decoded via in-process grpc_tools."""
 
     _PROTO_SRC = (
         "syntax = \"proto3\";\n"
         "message Person { string msisdn = 1; int32 age = 2; }\n"
+    )
+
+    # WR-05: a schema with snake_case fields, an int64, and a nested message,
+    # to lock in preserving_proto_field_name=True (snake_case + nested paths).
+    _PROTO_SRC_NESTED = (
+        "syntax = \"proto3\";\n"
+        "message Order {\n"
+        "  message Payload { int64 order_id = 1; string product_name = 2; }\n"
+        "  int64 customer_id = 1;\n"
+        "  Payload payload = 2;\n"
+        "}\n"
     )
 
     def test_protobuf_construction_does_not_raise_attributeerror(self) -> None:
@@ -895,6 +920,95 @@ class TestSchemaRegistryDecodeProtobuf:
             adapter = _make_sr_adapter()
             result = adapter.decode(raw)
         assert result == {"msisdn": "79001234567", "age": 42}
+
+    def test_decode_protobuf_preserves_snake_case_and_nested_paths(self) -> None:
+        """WR-05: snake_case field names are preserved and nested paths resolve.
+
+        With ``preserving_proto_field_name=True`` the decoded dict mirrors the
+        registered ``.proto`` (snake_case), so a nested dotted lookup such as
+        ``value:payload.order_id`` resolves — proving the Protobuf path now
+        agrees with the Avro path. (proto3 int64 JSON-maps to a string by spec;
+        ``_matches_key`` compares via ``str(...)`` so a string key still matches.)
+        """
+        import os
+        import tempfile
+        from datetime import datetime, timezone
+
+        from google.protobuf import (
+            descriptor_pb2,
+            descriptor_pool,
+            message_factory,
+        )
+        from grpc_tools import protoc as _protoc
+
+        from kafka_mcp.domain.models import KafkaMessage
+        from kafka_mcp.domain.search_service import _matches_key
+
+        # Build a nested-message wire payload by hand (the flat _build helper's
+        # setattr cannot populate a nested message field).
+        with tempfile.TemporaryDirectory() as td:
+            pp = os.path.join(td, "s.proto")
+            op = os.path.join(td, "s.desc")
+            with open(pp, "w", encoding="utf-8") as fh:
+                fh.write(self._PROTO_SRC_NESTED)
+            rc = _protoc.main(
+                [
+                    "protoc",
+                    f"--proto_path={td}",
+                    f"--descriptor_set_out={op}",
+                    "--include_imports",
+                    pp,
+                ]
+            )
+            assert rc == 0, f"grpc_tools.protoc failed (rc={rc})"
+            fds = descriptor_pb2.FileDescriptorSet()
+            with open(op, "rb") as fh:
+                fds.ParseFromString(fh.read())
+        pool = descriptor_pool.DescriptorPool()
+        fd = None
+        for f in fds.file:
+            fd = pool.Add(f)
+        order_cls = message_factory.GetMessageClass(
+            fd.message_types_by_name["Order"]
+        )
+        order = order_cls()
+        order.customer_id = 7000000000  # int64 > 2**31, exercises int64 mapping
+        order.payload.order_id = 9000000001
+        order.payload.product_name = "widget"
+        payload = order.SerializeToString()
+        raw = b"\x00" + (123).to_bytes(4, "big") + b"\x00" + payload
+
+        schema = _mock_schema("PROTOBUF", schema_str=self._PROTO_SRC_NESTED)
+        mock_client = MagicMock()
+        mock_client.get_schema.return_value = schema
+
+        with patch(
+            _ADAPTER_MOD + ".SchemaRegistryClient", return_value=mock_client
+        ):
+            adapter = _make_sr_adapter()
+            result = adapter.decode(raw)
+
+        # Snake_case field names preserved (NOT camelCased customerId/orderId).
+        assert "customer_id" in result
+        assert "payload" in result
+        assert "order_id" in result["payload"]
+        assert "product_name" in result["payload"]
+
+        # Nested dotted-path matching now resolves on the Protobuf path. Wrap the
+        # decoded value in a KafkaMessage and match via the value:<path> form —
+        # exactly how the search service queries it (proves WR-05 end-to-end).
+        msg = KafkaMessage(
+            topic="orders",
+            partition=0,
+            offset=0,
+            key=None,
+            headers={},
+            value=result,
+            timestamp_utc=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            raw=raw,
+        )
+        assert _matches_key(msg, "9000000001", "value:payload.order_id")
+        assert _matches_key(msg, "7000000000", "value:customer_id")
 
     def test_decode_unknown_schema_type(self) -> None:
         """Schema type other than AVRO/PROTOBUF → DecodeError with 'unknown schema type'."""
