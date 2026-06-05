@@ -12,14 +12,12 @@ Covers:
 
 from __future__ import annotations
 
-import typing
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from kafka_mcp.ports.consumer import ConsumerPort
 from kafka_mcp.ports.schema_registry import SchemaRegistryPort
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -208,6 +206,108 @@ class TestConfluentConsumerAdapterWatermarks:
         _args, kwargs = mock_consumer.get_watermark_offsets.call_args
         # poll_timeout default is 1.0; the metadata budget is 10.0.
         assert kwargs.get("timeout") == 10.0
+
+
+# ---------------------------------------------------------------------------
+# ConfluentConsumerAdapter — get_partition_ids
+# ---------------------------------------------------------------------------
+
+
+def _make_topic_metadata(
+    topic: str, *, partitions: list[int] | None = None, error: object = None
+) -> MagicMock:
+    """Build a list_topics(topic=...) result mock for a single topic.
+
+    metadata.topics is dict[str, TopicMetadata-like]; each TopicMetadata has
+    ``.error`` (None or a KafkaError) and ``.partitions`` (dict keyed by id).
+    Pass ``partitions=None`` to omit the topic entirely (broker returned no
+    metadata for it).
+    """
+    meta = MagicMock()
+    if partitions is None and error is None:
+        meta.topics = {}
+        return meta
+    topic_meta = MagicMock()
+    topic_meta.error = error
+    topic_meta.partitions = {pid: MagicMock(id=pid) for pid in (partitions or [])}
+    meta.topics = {topic: topic_meta}
+    return meta
+
+
+class TestConfluentConsumerAdapterGetPartitionIds:
+    """get_partition_ids: returns sorted ids; discriminates not-found vs transient (WR-01)."""
+
+    def _make_adapter(self, mock_consumer: MagicMock) -> object:
+        from kafka_mcp.adapters.outbound.confluent_consumer import (
+            ConfluentConsumerAdapter,
+        )
+
+        settings = _make_settings()
+        with patch(
+            "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
+            return_value=mock_consumer,
+        ):
+            return ConfluentConsumerAdapter(settings)
+
+    def test_returns_sorted_partition_ids(self) -> None:
+        mock_consumer = MagicMock()
+        mock_consumer.list_topics.return_value = _make_topic_metadata(
+            "payments", partitions=[2, 0, 1]
+        )
+        adapter = self._make_adapter(mock_consumer)
+        assert adapter.get_partition_ids("payments") == [0, 1, 2]
+
+    def test_uses_metadata_timeout(self) -> None:
+        """WR-03/WR-01: per-topic metadata fetch uses the 10s budget."""
+        mock_consumer = MagicMock()
+        mock_consumer.list_topics.return_value = _make_topic_metadata(
+            "payments", partitions=[0]
+        )
+        adapter = self._make_adapter(mock_consumer)
+        adapter.get_partition_ids("payments")
+        _args, kwargs = mock_consumer.list_topics.call_args
+        assert kwargs.get("timeout") == 10.0
+        assert kwargs.get("topic") == "payments"
+
+    def test_missing_topic_metadata_is_not_found(self) -> None:
+        from kafka_mcp.domain.errors import TopicNotFoundError
+
+        mock_consumer = MagicMock()
+        mock_consumer.list_topics.return_value = _make_topic_metadata("ghost")
+        adapter = self._make_adapter(mock_consumer)
+        with pytest.raises(TopicNotFoundError) as exc_info:
+            adapter.get_partition_ids("ghost")
+        assert exc_info.value.topic == "ghost"
+
+    def test_unknown_topic_error_code_is_not_found(self) -> None:
+        from confluent_kafka import KafkaError
+
+        from kafka_mcp.domain.errors import TopicNotFoundError
+
+        mock_consumer = MagicMock()
+        mock_consumer.list_topics.return_value = _make_topic_metadata(
+            "ghost", error=KafkaError(KafkaError.UNKNOWN_TOPIC_OR_PART)
+        )
+        adapter = self._make_adapter(mock_consumer)
+        with pytest.raises(TopicNotFoundError):
+            adapter.get_partition_ids("ghost")
+
+    def test_transient_error_code_reraised(self) -> None:
+        """WR-01: a transient TopicMetadata.error must NOT become 404."""
+        from confluent_kafka import KafkaError, KafkaException
+
+        from kafka_mcp.domain.errors import TopicNotFoundError
+
+        mock_consumer = MagicMock()
+        mock_consumer.list_topics.return_value = _make_topic_metadata(
+            "payments", error=KafkaError(KafkaError.LEADER_NOT_AVAILABLE)
+        )
+        adapter = self._make_adapter(mock_consumer)
+        with pytest.raises(KafkaException):
+            try:
+                adapter.get_partition_ids("payments")
+            except TopicNotFoundError:  # pragma: no cover - regression guard
+                pytest.fail("transient error mistranslated to TopicNotFound")
 
 
 # ---------------------------------------------------------------------------

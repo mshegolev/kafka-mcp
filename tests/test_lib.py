@@ -13,13 +13,11 @@ from __future__ import annotations
 
 import pathlib
 import subprocess
-import sys
 
 import pytest
 
 from kafka_mcp.domain.errors import ConfigError, TopicNotFoundError
 from kafka_mcp.domain.models import TopicInfo
-
 
 # ---------------------------------------------------------------------------
 # Mock ConsumerPort (no real broker needed)
