@@ -316,7 +316,12 @@ class TopicService:
                 for raw_msg in raw_msgs:
                     # Resilient decode: DecodeError → value=None, keep message
                     try:
-                        decoded = self._registry.decode(raw_msg.raw)
+                        decoded = self._registry.decode(
+                            raw_msg.raw,
+                            raw_msg.topic,
+                            raw_msg.partition,
+                            raw_msg.offset,
+                        )
                     except DecodeError:
                         decoded = None
 
@@ -359,8 +364,15 @@ class TopicService:
         # Raises MessageNotFoundError if not found (propagate)
         raw_msg = self._consumer.fetch_message(topic, partition, offset)
 
-        # Raises DecodeError if decode fails (propagate — strict single-message path)
-        decoded = self._registry.decode(raw_msg.raw)
+        # Raises DecodeError if decode fails (propagate — strict single-message path).
+        # Pass the real coordinates so the surfaced DecodeError reports the
+        # actual topic/partition/offset, not a placeholder [0]@0 (CR-02).
+        decoded = self._registry.decode(
+            raw_msg.raw,
+            raw_msg.topic,
+            raw_msg.partition,
+            raw_msg.offset,
+        )
 
         evidence_keys = _extract_evidence_keys(decoded, raw_msg.headers)
         return raw_msg.model_copy(

@@ -747,6 +747,27 @@ class TestTopicServiceGetMessage:
         with pytest.raises(DecodeError):
             svc.get_message("orders", 0, 42)
 
+    def test_get_message_decode_error_carries_real_coordinates(self) -> None:
+        """CR-02: a decode failure surfaces the real topic/partition/offset.
+
+        The registry echoes the coordinates it actually received from the
+        domain service. If the service dropped them (the CR-02 bug), the
+        DecodeError would report the empty-string placeholder instead of
+        the message's real location.
+        """
+        raw = _make_raw_msg("payments", 3, 1500, key="k")
+        consumer = MockConsumerWithMessage(message=raw)
+        registry = MockSchemaRegistry(raise_decode_error=True)
+        svc = _make_service(consumer, registry)
+
+        with pytest.raises(DecodeError) as exc_info:
+            svc.get_message("payments", 3, 1500)
+
+        err = exc_info.value
+        assert err.topic == "payments"
+        assert err.partition == 3
+        assert err.offset == 1500
+
     def test_get_message_not_found_propagated(self) -> None:
         """MessageNotFoundError from consumer propagates to caller."""
         consumer = MockConsumerWithMessage(raise_not_found=True)
