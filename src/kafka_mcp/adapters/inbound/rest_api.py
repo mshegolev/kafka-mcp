@@ -1,14 +1,17 @@
 """FastAPI REST inbound adapter — MCP-mirror POST /tools/* convention.
 
 Exposes:
-  POST /tools/list_topics   — body: {include_internal?: bool}
-  POST /tools/describe_topic — body: {topic: str}
+  POST /tools/list_topics       — body: {include_internal?: bool}
+  POST /tools/describe_topic    — body: {topic: str}
+  POST /tools/search_messages   — body: SearchMessagesRequest
+  POST /tools/get_message       — body: GetMessageRequest
 
 Route names follow the MCP tool-call convention (D-16): POST /tools/{tool_name}
 taking a JSON body.  No REST-resource routes like /topics or /describe.
 
 T-04-01 (Tampering): Pydantic request models validate all inputs before they
 reach KafkaClient.  Unknown topics return HTTP 404 rather than leaking metadata.
+T-02-05-A (Tampering): limit field constrained ge=1, le=10000 via Field.
 
 Usage::
 
@@ -23,14 +26,21 @@ Usage::
 
 from __future__ import annotations
 
+import base64
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from kafka_mcp.adapters.inbound.lib import KafkaClient
-from kafka_mcp.domain.errors import TopicNotFoundError
+from kafka_mcp.domain.errors import (
+    DecodeError,
+    MessageNotFoundError,
+    TopicNotFoundError,
+)
+from kafka_mcp.domain.models import KafkaMessage
 
 # ---------------------------------------------------------------------------
 # Request models (T-04-01: Pydantic validates inputs at the boundary)
@@ -53,6 +63,58 @@ class DescribeTopicRequest(BaseModel):
     topic: str
 
 
+class SearchMessagesRequest(BaseModel):
+    """Request body for POST /tools/search_messages.
+
+    T-02-05-A: ``limit`` is constrained to 1–10000 to prevent DoS via
+    excessive scan depth.
+    T-02-05-D: ``time_from``/``time_to`` are pydantic datetime fields;
+    FastAPI/pydantic parse ISO8601 automatically and reject malformed input
+    with a 422 before it reaches KafkaClient.
+    """
+
+    key: str
+    key_field: str | None = None
+    topics: list[str] | None = None
+    time_from: datetime | None = None
+    time_to: datetime | None = None
+    limit: int = Field(default=500, ge=1, le=10000)
+
+
+class GetMessageRequest(BaseModel):
+    """Request body for POST /tools/get_message."""
+
+    topic: str
+    partition: int
+    offset: int
+
+
+# ---------------------------------------------------------------------------
+# Serialization helper
+# ---------------------------------------------------------------------------
+
+
+def _serialize_message(msg: KafkaMessage) -> dict:
+    """Serialize a KafkaMessage to a JSON-safe dict.
+
+    Converts ``raw`` bytes to a base64-encoded ASCII string so the dict
+    can be safely returned over HTTP (bytes are not JSON-serializable).
+
+    Args:
+        msg: A :class:`~kafka_mcp.domain.models.KafkaMessage` domain object.
+
+    Returns:
+        Dict with all fields from ``model_dump()`` plus ``raw`` replaced
+        by its base64-encoded ASCII representation.
+    """
+    data = msg.model_dump()
+    data["raw"] = base64.b64encode(msg.raw).decode("ascii")
+    # Serialize datetime to ISO-8601 string (model_dump may return datetime obj)
+    if isinstance(data.get("timestamp_utc"), datetime):
+        data["timestamp_utc"] = data["timestamp_utc"].isoformat()
+    return data
+
+
 # ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
@@ -64,6 +126,8 @@ def create_app(client: KafkaClient) -> FastAPI:
     Registers:
     - ``POST /tools/list_topics``
     - ``POST /tools/describe_topic``
+    - ``POST /tools/search_messages``
+    - ``POST /tools/get_message``
 
     Args:
         client: A :class:`~kafka_mcp.adapters.inbound.lib.KafkaClient`
@@ -118,6 +182,61 @@ def create_app(client: KafkaClient) -> FastAPI:
             raise HTTPException(
                 status_code=404,
                 detail={"error": "TopicNotFoundError", "topic": exc.topic},
+            ) from exc
+
+    @app.post("/tools/search_messages")
+    def _search_messages(req: SearchMessagesRequest) -> dict:
+        """Search Kafka messages by key within an optional time window.
+
+        Returns:
+            ``{"result": [...]}`` — list of message dicts with base64 raw.
+        """
+        results = client.search_messages(
+            req.key,
+            key_field=req.key_field,
+            topics=req.topics,
+            time_from=req.time_from,
+            time_to=req.time_to,
+            limit=req.limit,
+        )
+        return {"result": [_serialize_message(m) for m in results]}
+
+    @app.post("/tools/get_message")
+    def _get_message(req: GetMessageRequest) -> dict:
+        """Fetch and decode a single message by exact coordinates.
+
+        Returns:
+            ``{"result": {...}}`` — message dict with base64 raw.
+
+        Raises:
+            HTTPException 404: When no message exists at the given coordinates.
+                Body: ``{"detail": {"error": "MessageNotFoundError", ...}}``
+            HTTPException 422: When the payload cannot be decoded.
+                Body: ``{"detail": {"error": "DecodeError", ..., "reason": "..."}}``
+        """
+        try:
+            msg = client.get_message(req.topic, req.partition, req.offset)
+            return {"result": _serialize_message(msg)}
+        except MessageNotFoundError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "MessageNotFoundError",
+                    "topic": exc.topic,
+                    "partition": exc.partition,
+                    "offset": exc.offset,
+                },
+            ) from exc
+        except DecodeError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "DecodeError",
+                    "topic": exc.topic,
+                    "partition": exc.partition,
+                    "offset": exc.offset,
+                    "reason": exc.reason,
+                },
             ) from exc
 
     return app
