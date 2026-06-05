@@ -7,7 +7,11 @@ Dispatches to one of three modes based on sys.argv:
 3. Default / "serve" → FastAPI/uvicorn HTTP server
 
 Environment variables (T-04-06):
-  KAFKA_MCP_HOST: uvicorn bind host (default "0.0.0.0")
+  KAFKA_MCP_HOST: uvicorn bind host (default "127.0.0.1", loopback-only).
+    Set explicitly to "0.0.0.0" to expose the HTTP face on all interfaces —
+    the brick has NO built-in authentication, so a public bind MUST be fronted
+    by an authenticating reverse proxy (API key / mTLS / auth header). A startup
+    warning is emitted when a non-loopback host is configured.
   KAFKA_MCP_PORT: uvicorn bind port (default "8000")
   KAFKA_MCP_BOOTSTRAP_SERVERS: required — fails fast with ConfigError if absent
 
@@ -66,6 +70,16 @@ def main() -> None:
 
     client = KafkaClient.from_env()
     app = create_app(client)
-    host = os.environ.get("KAFKA_MCP_HOST", "0.0.0.0")
+    # Secure default: bind to loopback. Exposing the unauthenticated HTTP face on
+    # all interfaces requires an explicit KAFKA_MCP_HOST=0.0.0.0 opt-in.
+    host = os.environ.get("KAFKA_MCP_HOST", "127.0.0.1")
     port = int(os.environ.get("KAFKA_MCP_PORT", "8000"))
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        print(
+            f"WARNING: kafka-mcp HTTP face binding to {host!r} (non-loopback). "
+            "This brick has no built-in authentication — front it with an "
+            "authenticating reverse proxy (API key / mTLS / auth header) before "
+            "exposing it on an untrusted network.",
+            file=sys.stderr,
+        )
     uvicorn.run(app, host=host, port=port)
