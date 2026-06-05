@@ -58,15 +58,20 @@ class ConfluentConsumerAdapter:
 
         if settings.security_protocol != "PLAINTEXT":
             conf["security.protocol"] = settings.security_protocol
+
+        # Only configure SASL when a mechanism is actually requested.
+        # Keying on sasl_mechanism (not "not PLAINTEXT") means TLS-only
+        # deployments (SECURITY_PROTOCOL=SSL) and SASL_SSL-without-explicit-
+        # mechanism deployments construct cleanly instead of injecting a
+        # None mechanism that librdkafka rejects at Consumer() construction.
+        if settings.sasl_mechanism:
             conf["sasl.mechanism"] = settings.sasl_mechanism
-            conf["sasl.username"] = settings.sasl_username
+            if settings.sasl_username is not None:
+                conf["sasl.username"] = settings.sasl_username
             # Extract SecretStr value immediately — never stored in an
             # attribute or logged (T-02-01).
-            conf["sasl.password"] = (
-                settings.sasl_password.get_secret_value()
-                if settings.sasl_password
-                else None
-            )
+            if settings.sasl_password is not None:
+                conf["sasl.password"] = settings.sasl_password.get_secret_value()
 
         self._consumer: Consumer = Consumer(conf)
 

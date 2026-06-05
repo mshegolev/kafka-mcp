@@ -319,6 +319,114 @@ class TestConfluentConsumerAdapterConfig:
             "group.id must be unique per instantiation (uuid4)"
         )
 
+    def test_ssl_only_omits_sasl_keys(self) -> None:
+        """TLS-only (SSL, no mechanism) must not inject any sasl.* keys.
+
+        Regression for CR-01: gating SASL on ``not PLAINTEXT`` injected
+        ``sasl.mechanism=None`` which librdkafka rejects at construction.
+        """
+        from kafka_mcp.adapters.outbound.confluent_consumer import (
+            ConfluentConsumerAdapter,
+        )
+        from kafka_mcp.config import KafkaMcpSettings
+
+        captured_conf: dict = {}
+
+        def fake_consumer(conf: dict) -> MagicMock:
+            captured_conf.update(conf)
+            return MagicMock()
+
+        settings = KafkaMcpSettings(
+            bootstrap_servers="localhost:9092", security_protocol="SSL"
+        )
+        with patch(
+            "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
+            side_effect=fake_consumer,
+        ):
+            ConfluentConsumerAdapter(settings)
+
+        assert captured_conf.get("security.protocol") == "SSL"
+        assert not any(k.startswith("sasl.") for k in captured_conf), (
+            f"sasl.* keys must be omitted for TLS-only config: {captured_conf}"
+        )
+
+    def test_sasl_keys_added_only_when_mechanism_set(self) -> None:
+        """SASL keys are configured only when a mechanism is requested."""
+        from kafka_mcp.adapters.outbound.confluent_consumer import (
+            ConfluentConsumerAdapter,
+        )
+        from kafka_mcp.config import KafkaMcpSettings
+
+        captured_conf: dict = {}
+
+        def fake_consumer(conf: dict) -> MagicMock:
+            captured_conf.update(conf)
+            return MagicMock()
+
+        settings = KafkaMcpSettings(
+            bootstrap_servers="localhost:9092",
+            security_protocol="SASL_SSL",
+            sasl_mechanism="PLAIN",
+            sasl_username="alice",
+            sasl_password="secret",
+        )
+        with patch(
+            "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
+            side_effect=fake_consumer,
+        ):
+            ConfluentConsumerAdapter(settings)
+
+        assert captured_conf.get("sasl.mechanism") == "PLAIN"
+        assert captured_conf.get("sasl.username") == "alice"
+        assert captured_conf.get("sasl.password") == "secret"
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"security_protocol": "PLAINTEXT"},
+            # TLS-only: the exact deployment CR-01 broke. Before the fix this
+            # injected sasl.mechanism=None and raised KafkaException here.
+            {"security_protocol": "SSL"},
+            # SASL over TLS with an explicit mechanism (the supported SASL path).
+            {
+                "security_protocol": "SASL_SSL",
+                "sasl_mechanism": "PLAIN",
+                "sasl_username": "alice",
+                "sasl_password": "secret",
+            },
+        ],
+    )
+    def test_real_librdkafka_accepts_built_conf(self, kwargs: dict) -> None:
+        """Construct a REAL confluent_kafka.Consumer with the built conf.
+
+        Non-mocked regression test for CR-01: librdkafka validates the conf
+        dict at ``Consumer()`` construction. Before the fix, a TLS-only
+        config injected ``sasl.mechanism=None`` and raised ``KafkaException``
+        here. We assert no exception is raised for valid TLS/SASL configs.
+
+        (``SASL_SSL`` with NO mechanism is intentionally not tested: SASL
+        inherently requires a mechanism and librdkafka rejects that config
+        on its own merits, independent of this adapter.)
+        """
+        from confluent_kafka import KafkaException
+
+        from kafka_mcp.adapters.outbound.confluent_consumer import (
+            ConfluentConsumerAdapter,
+        )
+        from kafka_mcp.config import KafkaMcpSettings
+
+        settings = KafkaMcpSettings(
+            bootstrap_servers="localhost:9092", **kwargs
+        )
+
+        try:
+            # No mock: this exercises librdkafka's real config validation.
+            ConfluentConsumerAdapter(settings)
+        except KafkaException as exc:  # pragma: no cover - regression guard
+            pytest.fail(
+                f"librdkafka rejected a valid conf {kwargs}: {exc}"
+            )
+
 
 # ---------------------------------------------------------------------------
 # SchemaRegistryHttpAdapter
