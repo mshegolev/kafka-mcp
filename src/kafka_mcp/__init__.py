@@ -18,6 +18,7 @@ from kafka_mcp.domain.errors import (
     DecodeError,
     MessageNotFoundError,
     TopicNotFoundError,
+    TransientError,
 )
 from kafka_mcp.domain.models import KafkaMessage, PartitionInfo, TopicInfo
 
@@ -30,4 +31,5 @@ __all__ = [
     "ConfigError",
     "DecodeError",
     "MessageNotFoundError",
+    "TransientError",
 ]
