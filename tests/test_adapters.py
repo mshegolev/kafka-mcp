@@ -844,3 +844,272 @@ class TestSchemaRegistryAdapterSecurity:
             )
         assert secret not in repr(adapter)
         assert secret not in str(adapter)
+
+
+# ---------------------------------------------------------------------------
+# ConfluentConsumerAdapter — fetch_messages (plan 02-03)
+# ---------------------------------------------------------------------------
+
+
+def _make_consumer_adapter(mock_consumer: MagicMock) -> object:
+    """Build a ConfluentConsumerAdapter with a mocked librdkafka Consumer."""
+    from kafka_mcp.adapters.outbound.confluent_consumer import (
+        ConfluentConsumerAdapter,
+    )
+    from kafka_mcp.config import KafkaMcpSettings
+
+    settings = KafkaMcpSettings(bootstrap_servers="localhost:9092")
+    with patch(
+        "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
+        return_value=mock_consumer,
+    ):
+        return ConfluentConsumerAdapter(settings)
+
+
+def _make_msg_mock(
+    offset: int,
+    value: bytes = b'{"event":"test"}',
+    key: bytes | None = b"order-key",
+    headers: list | None = None,
+    timestamp_type: int = 1,  # TIMESTAMP_CREATE_TIME
+    timestamp_ms: int = 1_700_000_000_000,
+    error: object = None,
+) -> MagicMock:
+    """Build a mock confluent_kafka.Message for adapter tests."""
+    msg = MagicMock()
+    msg.offset.return_value = offset
+    msg.value.return_value = value
+    msg.key.return_value = key
+    msg.headers.return_value = headers
+    msg.timestamp.return_value = (timestamp_type, timestamp_ms)
+    msg.error.return_value = error
+    return msg
+
+
+class TestFetchMessages:
+    """ConfluentConsumerAdapter.fetch_messages — seek-and-scan logic."""
+
+    def test_fetch_messages_returns_kafka_message_list(self) -> None:
+        """Polled messages are returned as a list[KafkaMessage]."""
+        from kafka_mcp.domain.models import KafkaMessage
+
+        mock_consumer = MagicMock()
+        msg0 = _make_msg_mock(
+            offset=10,
+            value=b'{"event":"order_created"}',
+            key=b"order-123",
+            headers=[("x-trace", b"abc")],
+        )
+        mock_consumer.poll.side_effect = [msg0, None]
+        adapter = _make_consumer_adapter(mock_consumer)
+
+        result = adapter.fetch_messages(
+            topic="orders",
+            partition=0,
+            start_offset=10,
+            stop_offset=100,
+            time_to=None,
+            limit=50,
+        )
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+        msg = result[0]
+        assert isinstance(msg, KafkaMessage)
+        assert msg.topic == "orders"
+        assert msg.partition == 0
+        assert msg.offset == 10
+        assert msg.key == "order-123"
+        assert msg.headers == {"x-trace": "abc"}
+        assert msg.raw == b'{"event":"order_created"}'
+        assert msg.value is None
+
+    def test_fetch_messages_stops_at_stop_offset(self) -> None:
+        """Messages with offset >= stop_offset are not returned."""
+        mock_consumer = MagicMock()
+        msg0 = _make_msg_mock(offset=5)
+        msg1 = _make_msg_mock(offset=10)  # exactly at stop_offset — excluded
+        mock_consumer.poll.side_effect = [msg0, msg1, None]
+        adapter = _make_consumer_adapter(mock_consumer)
+
+        result = adapter.fetch_messages(
+            topic="orders",
+            partition=0,
+            start_offset=5,
+            stop_offset=10,
+            time_to=None,
+            limit=100,
+        )
+
+        offsets = [m.offset for m in result]
+        assert 10 not in offsets
+        assert 5 in offsets
+
+    def test_fetch_messages_stops_at_limit(self) -> None:
+        """Returns at most `limit` messages."""
+        mock_consumer = MagicMock()
+        msgs = [_make_msg_mock(offset=i) for i in range(10)]
+        mock_consumer.poll.side_effect = msgs + [None]
+        adapter = _make_consumer_adapter(mock_consumer)
+
+        result = adapter.fetch_messages(
+            topic="orders",
+            partition=0,
+            start_offset=0,
+            stop_offset=1000,
+            time_to=None,
+            limit=3,
+        )
+
+        assert len(result) == 3
+
+    def test_fetch_messages_stops_at_time_to(self) -> None:
+        """Messages with timestamp_utc > time_to are excluded and scan stops."""
+        from datetime import datetime, timezone
+
+        mock_consumer = MagicMock()
+        # msg0: at 1000s — within time_to of 1500s
+        msg0 = _make_msg_mock(
+            offset=0, timestamp_type=1, timestamp_ms=1_000_000
+        )
+        # msg1: at 2000s — exceeds time_to of 1.5s epoch → 1500000ms
+        msg1 = _make_msg_mock(
+            offset=1, timestamp_type=1, timestamp_ms=2_000_000
+        )
+        mock_consumer.poll.side_effect = [msg0, msg1, None]
+        adapter = _make_consumer_adapter(mock_consumer)
+
+        time_to = datetime.fromtimestamp(1500.0, tz=timezone.utc)
+        result = adapter.fetch_messages(
+            topic="orders",
+            partition=0,
+            start_offset=0,
+            stop_offset=1000,
+            time_to=time_to,
+            limit=100,
+        )
+
+        # Only the first message (within time_to) should be returned
+        assert len(result) == 1
+        assert result[0].offset == 0
+
+    def test_fetch_messages_timestamp_utc_from_create_time(self) -> None:
+        """TIMESTAMP_CREATE_TIME → UTC-aware datetime derived from ms correctly."""
+        from datetime import datetime, timezone
+
+        mock_consumer = MagicMock()
+        # 1_700_000_000_000 ms = epoch 1_700_000_000 s
+        ts_ms = 1_700_000_000_000
+        msg0 = _make_msg_mock(
+            offset=0, timestamp_type=1, timestamp_ms=ts_ms
+        )
+        mock_consumer.poll.side_effect = [msg0, None]
+        adapter = _make_consumer_adapter(mock_consumer)
+
+        result = adapter.fetch_messages(
+            topic="payments",
+            partition=0,
+            start_offset=0,
+            stop_offset=100,
+            time_to=None,
+            limit=10,
+        )
+
+        assert len(result) == 1
+        ts = result[0].timestamp_utc
+        expected = datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc)
+        assert ts == expected
+        assert ts.tzinfo is not None
+
+    def test_fetch_messages_timestamp_fallback_log_append_time(self) -> None:
+        """TIMESTAMP_LOG_APPEND_TIME → timestamp_utc still set (fallback path)."""
+        mock_consumer = MagicMock()
+        # timestamp_type=2 is TIMESTAMP_LOG_APPEND_TIME
+        msg0 = _make_msg_mock(
+            offset=0, timestamp_type=2, timestamp_ms=1_000_000_000
+        )
+        mock_consumer.poll.side_effect = [msg0, None]
+        adapter = _make_consumer_adapter(mock_consumer)
+
+        result = adapter.fetch_messages(
+            topic="events",
+            partition=0,
+            start_offset=0,
+            stop_offset=100,
+            time_to=None,
+            limit=10,
+        )
+
+        assert len(result) == 1
+        ts = result[0].timestamp_utc
+        assert ts is not None
+        assert ts.tzinfo is not None  # must be UTC-aware
+
+    def test_fetch_messages_respects_max_scan(self) -> None:
+        """Scan stops after max_scan messages regardless of limit."""
+        from kafka_mcp.config import KafkaMcpSettings
+
+        from kafka_mcp.adapters.outbound.confluent_consumer import (
+            ConfluentConsumerAdapter,
+        )
+
+        mock_consumer = MagicMock()
+        # Produce 200 messages; max_scan is set to 5 via settings
+        msgs = [_make_msg_mock(offset=i) for i in range(200)]
+        mock_consumer.poll.side_effect = msgs + [None]
+
+        # Use settings with max_scan=5
+        settings = KafkaMcpSettings(
+            bootstrap_servers="localhost:9092",
+            max_scan=5,
+        )
+        with patch(
+            "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
+            return_value=mock_consumer,
+        ):
+            adapter = ConfluentConsumerAdapter(settings)
+
+        result = adapter.fetch_messages(
+            topic="events",
+            partition=0,
+            start_offset=0,
+            stop_offset=1000,
+            time_to=None,
+            limit=100,
+        )
+
+        assert len(result) <= 5
+
+    def test_fetch_messages_empty_partition(self) -> None:
+        """Consumer.poll returns None immediately → returns empty list."""
+        mock_consumer = MagicMock()
+        mock_consumer.poll.return_value = None
+        adapter = _make_consumer_adapter(mock_consumer)
+
+        result = adapter.fetch_messages(
+            topic="orders",
+            partition=0,
+            start_offset=0,
+            stop_offset=100,
+            time_to=None,
+            limit=50,
+        )
+
+        assert result == []
+
+    def test_fetch_messages_no_subscribe_call(self) -> None:
+        """Consumer.subscribe is never called during fetch_messages (KAFKA-06)."""
+        mock_consumer = MagicMock()
+        mock_consumer.poll.return_value = None
+        adapter = _make_consumer_adapter(mock_consumer)
+
+        adapter.fetch_messages(
+            topic="orders",
+            partition=0,
+            start_offset=0,
+            stop_offset=100,
+            time_to=None,
+            limit=50,
+        )
+
+        mock_consumer.subscribe.assert_not_called()
