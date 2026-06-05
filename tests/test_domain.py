@@ -281,7 +281,6 @@ class TestKafkaMessage:
         return KafkaMessage(**defaults)
 
     def test_kafka_message_fields(self) -> None:
-        from kafka_mcp.domain.models import KafkaMessage
 
         msg = self._make_message()
         assert msg.topic == "test-topic"

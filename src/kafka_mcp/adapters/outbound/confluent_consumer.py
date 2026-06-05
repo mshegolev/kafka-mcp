@@ -20,8 +20,7 @@ from datetime import datetime, timezone
 from types import TracebackType
 from uuid import uuid4
 
-from confluent_kafka import Consumer, KafkaError, KafkaException, TopicPartition
-from confluent_kafka import TIMESTAMP_CREATE_TIME
+from confluent_kafka import TIMESTAMP_CREATE_TIME, Consumer, KafkaError, KafkaException, TopicPartition
 
 from kafka_mcp.config import KafkaMcpSettings
 from kafka_mcp.domain.errors import (

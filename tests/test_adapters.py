@@ -1175,11 +1175,10 @@ class TestFetchMessages:
 
     def test_fetch_messages_respects_max_scan(self) -> None:
         """Scan stops after max_scan messages regardless of limit."""
-        from kafka_mcp.config import KafkaMcpSettings
-
         from kafka_mcp.adapters.outbound.confluent_consumer import (
             ConfluentConsumerAdapter,
         )
+        from kafka_mcp.config import KafkaMcpSettings
 
         mock_consumer = MagicMock()
         # Produce 200 messages; max_scan is set to 5 via settings

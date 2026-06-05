@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 
-from kafka_mcp.domain.errors import MessageNotFoundError
+from kafka_mcp.domain.errors import MessageNotFoundError  # noqa: F401  # referenced in docstring
 from kafka_mcp.domain.models import KafkaMessage
 
 
