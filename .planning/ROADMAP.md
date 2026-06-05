@@ -39,7 +39,13 @@ MCP stdio, FastAPI REST, and CLI; read-only guarantee is structurally enforced.
      MCP tool definitions.
   5. `list_topics` and `describe_topic` are reachable via MCP stdio, FastAPI
      REST (`/tools/list_topics`), and `kafka-mcp list-topics` CLI.
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Scaffold + domain contracts (models, errors, ports, config)
+- [ ] 01-02-PLAN.md — Outbound adapters (ConfluentConsumerAdapter, SchemaRegistryHttpAdapter stub)
+- [ ] 01-03-PLAN.md — TopicService domain service + KafkaClient lib facade + end-to-end lib pytest
+- [ ] 01-04-PLAN.md — MCP stdio + FastAPI REST + CLI inbound adapters + server.py entry point
 
 ### Phase 2: Search + Decode
 **Goal**: Investigators can find events by key within a time window and retrieve
@@ -93,6 +99,6 @@ the brick is published to Glama.
 
 | Phase | Plans Complete | Status      | Completed |
 |-------|----------------|-------------|-----------|
-| 1. Foundation | 0/? | Not started | -         |
+| 1. Foundation | 0/4 | Not started | -         |
 | 2. Search + Decode | 0/? | Not started | -    |
 | 3. Native + Ship | 0/? | Not started | -      |
