@@ -665,3 +665,182 @@ class TestOrjsonHelpers:
 
         result = orjson_dumps({"key": "value"})
         assert result == b'{"key":"value"}'
+
+
+# ---------------------------------------------------------------------------
+# SchemaRegistryHttpAdapter — decode pipeline (plan 02-02)
+# ---------------------------------------------------------------------------
+# Helpers shared across decode tests
+
+_ADAPTER_MOD = "kafka_mcp.adapters.outbound.schema_registry_http"
+
+_SCHEMA_ID = 42
+_SCHEMA_ID_BYTES = _SCHEMA_ID.to_bytes(4, "big")
+_MAGIC = bytes([0x00])
+_CONFLUENT_PREFIX = _MAGIC + _SCHEMA_ID_BYTES  # 5 bytes total
+
+
+def _make_sr_adapter(url: str | None = "http://sr:8081") -> object:
+    from kafka_mcp.adapters.outbound.schema_registry_http import (
+        SchemaRegistryHttpAdapter,
+    )
+
+    return SchemaRegistryHttpAdapter(url=url)
+
+
+def _mock_schema(schema_type: str = "AVRO", schema_str: str = '{"type":"record","name":"T","fields":[]}') -> MagicMock:
+    """Build a mock Schema object as returned by SchemaRegistryClient.get_schema()."""
+    schema = MagicMock()
+    schema.schema_type = schema_type
+    schema.schema_str = schema_str
+    return schema
+
+
+class TestSchemaRegistryDecodeJson:
+    """JSON fallback path: no magic byte in payload."""
+
+    def test_decode_json_fallback(self) -> None:
+        """Plain JSON bytes (no magic byte) → returns the decoded dict."""
+        with patch(_ADAPTER_MOD + ".SchemaRegistryClient"):
+            adapter = _make_sr_adapter()
+        raw = b'{"key": "val"}'
+        result = adapter.decode(raw)
+        assert result == {"key": "val"}
+
+    def test_decode_json_fallback_invalid(self) -> None:
+        """Non-JSON, non-magic-byte payload → raises DecodeError with 'json' in reason."""
+        from kafka_mcp.domain.errors import DecodeError
+
+        with patch(_ADAPTER_MOD + ".SchemaRegistryClient"):
+            adapter = _make_sr_adapter()
+        raw = b"not-json"
+        with pytest.raises(DecodeError) as exc_info:
+            adapter.decode(raw, topic="t", partition=0, offset=0)
+        assert "json" in exc_info.value.reason.lower()
+
+    def test_decode_none_url_raises_decode_error(self) -> None:
+        """With url=None (SR not configured), magic-byte payload raises DecodeError."""
+        from kafka_mcp.domain.errors import DecodeError
+
+        adapter = _make_sr_adapter(url=None)
+        raw = _CONFLUENT_PREFIX + b"\x00" * 10
+        with pytest.raises(DecodeError) as exc_info:
+            adapter.decode(raw, topic="t", partition=0, offset=0)
+        assert "not configured" in exc_info.value.reason.lower()
+
+
+class TestSchemaRegistryDecodeAvro:
+    """Confluent-framed Avro payloads decoded via mocked AvroDeserializer."""
+
+    def test_decode_magic_byte_avro(self) -> None:
+        """Confluent-framed payload → calls AvroDeserializer and returns dict."""
+        mock_schema = _mock_schema("AVRO")
+        mock_client = MagicMock()
+        mock_client.get_schema.return_value = mock_schema
+        mock_deserializer = MagicMock(return_value={"order_id": "123"})
+
+        with (
+            patch(_ADAPTER_MOD + ".SchemaRegistryClient", return_value=mock_client),
+            patch(_ADAPTER_MOD + ".AvroDeserializer", return_value=mock_deserializer),
+        ):
+            adapter = _make_sr_adapter()
+            raw = _CONFLUENT_PREFIX + b"\x01" * 10
+            result = adapter.decode(raw)
+        assert result == {"order_id": "123"}
+
+    def test_decode_corrupt_avro_raises_decode_error(self) -> None:
+        """Avro deserializer failure → wrapped as DecodeError (not propagated raw)."""
+        from kafka_mcp.domain.errors import DecodeError
+
+        mock_schema = _mock_schema("AVRO")
+        mock_client = MagicMock()
+        mock_client.get_schema.return_value = mock_schema
+        mock_deserializer = MagicMock(side_effect=Exception("corrupt avro data"))
+
+        with (
+            patch(_ADAPTER_MOD + ".SchemaRegistryClient", return_value=mock_client),
+            patch(_ADAPTER_MOD + ".AvroDeserializer", return_value=mock_deserializer),
+        ):
+            adapter = _make_sr_adapter()
+            raw = _CONFLUENT_PREFIX + b"\xff" * 5
+            with pytest.raises(DecodeError):
+                adapter.decode(raw, topic="t", partition=0, offset=0)
+
+    def test_schema_registry_client_cached(self) -> None:
+        """Schema is fetched only once per schema_id (SR client caches internally)."""
+        mock_schema = _mock_schema("AVRO")
+        mock_client = MagicMock()
+        mock_client.get_schema.return_value = mock_schema
+        mock_deserializer = MagicMock(return_value={"k": "v"})
+
+        with (
+            patch(_ADAPTER_MOD + ".SchemaRegistryClient", return_value=mock_client),
+            patch(_ADAPTER_MOD + ".AvroDeserializer", return_value=mock_deserializer),
+        ):
+            adapter = _make_sr_adapter()
+            raw = _CONFLUENT_PREFIX + b"\x01" * 6
+            adapter.decode(raw)
+            adapter.decode(raw)
+
+        # SchemaRegistryClient.get_schema was called once (second call uses cached result)
+        assert mock_client.get_schema.call_count == 1
+
+
+class TestSchemaRegistryDecodeProtobuf:
+    """Confluent-framed Protobuf payloads decoded via mocked ProtobufDeserializer."""
+
+    def test_decode_magic_byte_protobuf(self) -> None:
+        """Confluent-framed PROTOBUF payload → calls ProtobufDeserializer and returns dict."""
+        mock_schema = _mock_schema("PROTOBUF")
+        mock_client = MagicMock()
+        mock_client.get_schema.return_value = mock_schema
+        mock_deserializer = MagicMock(return_value={"msisdn": "79001234567"})
+
+        with (
+            patch(_ADAPTER_MOD + ".SchemaRegistryClient", return_value=mock_client),
+            patch(_ADAPTER_MOD + ".ProtobufDeserializer", return_value=mock_deserializer),
+        ):
+            adapter = _make_sr_adapter()
+            raw = _CONFLUENT_PREFIX + b"\x02" * 10
+            result = adapter.decode(raw)
+        assert result == {"msisdn": "79001234567"}
+
+    def test_decode_unknown_schema_type(self) -> None:
+        """Schema type other than AVRO/PROTOBUF → DecodeError with 'unknown schema type'."""
+        from kafka_mcp.domain.errors import DecodeError
+
+        mock_schema = _mock_schema("JSON")  # not AVRO or PROTOBUF
+        mock_client = MagicMock()
+        mock_client.get_schema.return_value = mock_schema
+
+        with (
+            patch(_ADAPTER_MOD + ".SchemaRegistryClient", return_value=mock_client),
+        ):
+            adapter = _make_sr_adapter()
+            raw = _CONFLUENT_PREFIX + b"\x03" * 5
+            with pytest.raises(DecodeError) as exc_info:
+                adapter.decode(raw, topic="t", partition=0, offset=0)
+        assert "unknown schema type" in exc_info.value.reason.lower()
+
+
+class TestSchemaRegistryAdapterSecurity:
+    """Security invariants: credentials not exposed; Protocol membership."""
+
+    def test_implements_schema_registry_port(self) -> None:
+        """SchemaRegistryHttpAdapter(url=None) is an instance of SchemaRegistryPort."""
+        adapter = _make_sr_adapter(url=None)
+        assert isinstance(adapter, SchemaRegistryPort)
+
+    def test_sr_credentials_not_logged(self) -> None:
+        """repr() and str() of the adapter must not contain the sr_pass value."""
+        from kafka_mcp.adapters.outbound.schema_registry_http import (
+            SchemaRegistryHttpAdapter,
+        )
+
+        secret = "super-secret-password-xyz"
+        with patch(_ADAPTER_MOD + ".SchemaRegistryClient"):
+            adapter = SchemaRegistryHttpAdapter(
+                url="http://sr:8081", user="alice", password=secret
+            )
+        assert secret not in repr(adapter)
+        assert secret not in str(adapter)
