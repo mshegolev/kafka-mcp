@@ -91,7 +91,7 @@ Schema Registry before the payload is returned.
 Plans:
 **Wave 1**
 
-- [ ] 02-01-PLAN.md — Domain contracts: KafkaMessage model, DecodeError, MessageNotFoundError, extended ConsumerPort + SchemaRegistryPort
+- [x] 02-01-PLAN.md — Domain contracts: KafkaMessage model, DecodeError, MessageNotFoundError, extended ConsumerPort + SchemaRegistryPort
 
 **Wave 2** *(blocked on Wave 1 completion — runs in parallel)*
 
@@ -144,5 +144,5 @@ the brick is published to Glama.
 | Phase | Plans Complete | Status      | Completed |
 |-------|----------------|-------------|-----------|
 | 1. Foundation | 4/4 | Complete    | 2026-06-05 |
-| 2. Search + Decode | 0/5 | Not started | -    |
+| 2. Search + Decode | 1/5 | In Progress|  |
 | 3. Native + Ship | 0/? | Not started | -      |

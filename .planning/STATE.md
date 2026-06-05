@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-06-05T17:33:10.982Z"
-last_activity: 2026-06-05 -- Phase 2 planning complete
+last_updated: "2026-06-05T18:07:51.891Z"
+last_activity: 2026-06-05
 progress:
   total_phases: 3
   completed_phases: 1
   total_plans: 9
-  completed_plans: 4
+  completed_plans: 5
   percent: 33
 ---
 
@@ -22,16 +22,16 @@ See: .planning/PROJECT.md (updated 2026-06-05)
 **Core value:** Read-only Kafka MCP brick — find events by key in a time window,
 decode Avro/Protobuf/JSON via Schema Registry, surface evidence for incident
 timelines. Library-first: works in pytest without MCP or FastAPI.
-**Current focus:** Phase 2 — search + decode
+**Current focus:** Phase 2 — Search + Decode
 
 ## Current Position
 
-Phase: 2
-Plan: Not started
+Phase: 2 (Search + Decode) — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
-Last activity: 2026-06-05 -- Phase 2 planning complete
+Last activity: 2026-06-05
 
-Progress: [██████████] 100%
+Progress: [██████░░░░] 56%
 
 ## Performance Metrics
 
@@ -56,6 +56,7 @@ Progress: [██████████] 100%
 | Phase 01 P01-02 | 20 | 2 tasks | 5 files |
 | Phase 01 P01-03 | 38 | 2 tasks | 9 files |
 | Phase 01 P01-04 | 15 | 2 tasks | 6 files |
+| Phase 02 P02-01 | 29 | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -77,6 +78,9 @@ Decisions inherited from umbrella spec (D1/D2/D5/D7/D8/D9):
 - [Phase ?]: config.py ConfigError wrapping handles both pydantic missing-field and value_error types
 - [Phase ?]: FastMCP used for MCP stdio adapter with ToolAnnotations(readOnlyHint=True) per D-13/D-14
 - [Phase ?]: server.py dispatches on sys.argv: --stdio=MCP stdio, known subcommand=CLI, default=uvicorn HTTP
+- [Phase ?]: KafkaMessage.keys default_factory produces {order_id,msisdn,customer_id,product_id:None}
+- [Phase ?]: DecodeError and MessageNotFoundError inherit Exception (not ValueError) for clean catch hierarchy
+- [Phase ?]: Adapter stubs (NotImplementedError) added in 02-01 so Protocol isinstance checks pass; real impl in 02-02/02-03
 
 ### Pending Todos
 
@@ -88,6 +92,6 @@ None yet. Phase 1 starts by copying the graphql-mcp v2 hexagonal skeleton.
 
 ## Session Continuity
 
-Last session: 2026-06-05T13:03:04.854Z
-Stopped at: Completed 01-04-PLAN.md
+Last session: 2026-06-05T18:07:51.886Z
+Stopped at: Completed 02-01-PLAN.md
 Resume file: None
