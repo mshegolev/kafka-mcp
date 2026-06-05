@@ -1113,3 +1113,96 @@ class TestFetchMessages:
         )
 
         mock_consumer.subscribe.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# ConfluentConsumerAdapter — fetch_message (plan 02-03)
+# ---------------------------------------------------------------------------
+
+
+class TestFetchMessage:
+    """ConfluentConsumerAdapter.fetch_message — single-offset lookup."""
+
+    def test_fetch_message_returns_single_kafka_message(self) -> None:
+        """Valid offset within watermarks → returns one KafkaMessage."""
+        from kafka_mcp.domain.models import KafkaMessage
+
+        mock_consumer = MagicMock()
+        # Watermarks: low=0, high=100; requesting offset=10 (in range)
+        mock_consumer.get_watermark_offsets.return_value = (0, 100)
+        msg = _make_msg_mock(
+            offset=10,
+            value=b'{"event":"payment"}',
+            key=b"pay-456",
+            headers=[("x-id", b"xyz")],
+        )
+        mock_consumer.poll.return_value = msg
+        adapter = _make_consumer_adapter(mock_consumer)
+
+        result = adapter.fetch_message(topic="payments", partition=0, offset=10)
+
+        assert isinstance(result, KafkaMessage)
+        assert result.topic == "payments"
+        assert result.partition == 0
+        assert result.offset == 10
+        assert result.key == "pay-456"
+        assert result.headers == {"x-id": "xyz"}
+        assert result.raw == b'{"event":"payment"}'
+        assert result.value is None
+
+    def test_fetch_message_out_of_range_raises_message_not_found(
+        self,
+    ) -> None:
+        """offset >= latest watermark → raises MessageNotFoundError."""
+        from kafka_mcp.domain.errors import MessageNotFoundError
+
+        mock_consumer = MagicMock()
+        mock_consumer.get_watermark_offsets.return_value = (0, 50)
+        adapter = _make_consumer_adapter(mock_consumer)
+
+        with pytest.raises(MessageNotFoundError):
+            adapter.fetch_message(topic="orders", partition=1, offset=50)
+
+    def test_fetch_message_message_not_found_carries_coordinates(
+        self,
+    ) -> None:
+        """MessageNotFoundError.topic, .partition, .offset match the request."""
+        from kafka_mcp.domain.errors import MessageNotFoundError
+
+        mock_consumer = MagicMock()
+        mock_consumer.get_watermark_offsets.return_value = (0, 30)
+        adapter = _make_consumer_adapter(mock_consumer)
+
+        with pytest.raises(MessageNotFoundError) as exc_info:
+            adapter.fetch_message(
+                topic="events", partition=2, offset=999
+            )
+
+        err = exc_info.value
+        assert err.topic == "events"
+        assert err.partition == 2
+        assert err.offset == 999
+
+    def test_fetch_message_timeout_returns_message_not_found(self) -> None:
+        """Consumer.poll returns None (timeout) → raises MessageNotFoundError."""
+        from kafka_mcp.domain.errors import MessageNotFoundError
+
+        mock_consumer = MagicMock()
+        mock_consumer.get_watermark_offsets.return_value = (0, 100)
+        mock_consumer.poll.return_value = None  # timeout
+        adapter = _make_consumer_adapter(mock_consumer)
+
+        with pytest.raises(MessageNotFoundError):
+            adapter.fetch_message(topic="orders", partition=0, offset=5)
+
+    def test_fetch_message_no_subscribe_in_fetch_message(self) -> None:
+        """Consumer.subscribe is never called during fetch_message (KAFKA-06)."""
+        mock_consumer = MagicMock()
+        mock_consumer.get_watermark_offsets.return_value = (0, 100)
+        msg = _make_msg_mock(offset=5)
+        mock_consumer.poll.return_value = msg
+        adapter = _make_consumer_adapter(mock_consumer)
+
+        adapter.fetch_message(topic="orders", partition=0, offset=5)
+
+        mock_consumer.subscribe.assert_not_called()
