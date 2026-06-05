@@ -33,3 +33,55 @@ class TopicNotFoundError(Exception):
     def __init__(self, topic: str) -> None:
         super().__init__(f"Topic not found: {topic!r}")
         self.topic = topic
+
+
+class DecodeError(Exception):
+    """Raised when a Kafka message payload cannot be decoded.
+
+    Carries the message coordinates and a human-readable reason so
+    callers can handle decode failures with full context.
+
+    Attributes:
+        topic: Topic name.
+        partition: Partition index.
+        offset: Message offset.
+        reason: Human-readable description of the decode failure.
+
+    Example::
+
+        raise DecodeError("payments", 0, 42, "unknown magic byte 0x01")
+    """
+
+    def __init__(
+        self, topic: str, partition: int, offset: int, reason: str
+    ) -> None:
+        super().__init__(
+            f"Decode failed for {topic}[{partition}]@{offset}: {reason}"
+        )
+        self.topic = topic
+        self.partition = partition
+        self.offset = offset
+        self.reason = reason
+
+
+class MessageNotFoundError(Exception):
+    """Raised when a message at the requested coordinates does not exist.
+
+    Used by the single-message ``get_message`` path when the offset is
+    beyond the partition watermarks or the partition is empty.
+
+    Attributes:
+        topic: Topic name.
+        partition: Partition index.
+        offset: Requested offset that was not found.
+
+    Example::
+
+        raise MessageNotFoundError("orders", 1, 9999)
+    """
+
+    def __init__(self, topic: str, partition: int, offset: int) -> None:
+        super().__init__(f"No message at {topic}[{partition}]@{offset}")
+        self.topic = topic
+        self.partition = partition
+        self.offset = offset
