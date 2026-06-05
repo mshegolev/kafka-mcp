@@ -347,6 +347,195 @@ def test_mcp_importable() -> None:
 
 
 # ---------------------------------------------------------------------------
+# CLI — search-messages and get-message subcommands (Phase 2 plan 02-05)
+# ---------------------------------------------------------------------------
+
+
+def _capture_stderr(fn, *args, **kwargs) -> str:
+    """Run fn(*args, **kwargs), capture stderr, return it as a string."""
+    buf = io.StringIO()
+    old_stderr = sys.stderr
+    sys.stderr = buf
+    try:
+        fn(*args, **kwargs)
+    except SystemExit:
+        pass
+    finally:
+        sys.stderr = old_stderr
+    return buf.getvalue()
+
+
+def test_cli_search_messages_subcommand_exists() -> None:
+    """parse_args(['search-messages', '--key', 'x']) does not raise."""
+    from kafka_mcp.adapters.inbound.cli import parse_args
+
+    ns = parse_args(["search-messages", "--key", "x"])
+    assert ns.subcommand == "search-messages"
+    assert ns.key == "x"
+
+
+def test_cli_search_messages_json_output() -> None:
+    """run_search_messages with as_json=True prints a JSON list."""
+    import orjson
+
+    from kafka_mcp.adapters.inbound.cli import run_search_messages
+
+    output = _capture_run(
+        run_search_messages,
+        MockKafkaClient(),
+        key="ORD-123",
+        key_field=None,
+        topics=None,
+        time_from_str=None,
+        time_to_str=None,
+        limit=500,
+        as_json=True,
+    )
+    data = orjson.loads(output)
+    assert isinstance(data, list)
+    assert len(data) == 1
+    assert data[0]["topic"] == "orders"
+
+
+def test_cli_search_messages_table_output() -> None:
+    """run_search_messages with as_json=False prints a human-readable table."""
+    from kafka_mcp.adapters.inbound.cli import run_search_messages
+
+    output = _capture_run(
+        run_search_messages,
+        MockKafkaClient(),
+        key="ORD-123",
+        key_field=None,
+        topics=None,
+        time_from_str=None,
+        time_to_str=None,
+        limit=500,
+        as_json=False,
+    )
+    # Table should contain column headers and message data
+    assert "Topic" in output or "orders" in output
+    assert "orders" in output
+
+
+def test_cli_search_messages_flags() -> None:
+    """parse_args accepts all search-messages flags."""
+    from kafka_mcp.adapters.inbound.cli import parse_args
+
+    ns = parse_args([
+        "search-messages",
+        "--key", "ORD-123",
+        "--key-field", "header:ce-type",
+        "--topics", "orders,payments",
+        "--time-from", "2026-01-01T00:00:00Z",
+        "--time-to", "2026-01-02T00:00:00Z",
+        "--limit", "100",
+        "--json",
+    ])
+    assert ns.subcommand == "search-messages"
+    assert ns.key == "ORD-123"
+    assert ns.key_field == "header:ce-type"
+    assert ns.topics == "orders,payments"
+    assert ns.time_from == "2026-01-01T00:00:00Z"
+    assert ns.time_to == "2026-01-02T00:00:00Z"
+    assert ns.limit == 100
+    assert ns.json is True
+
+
+def test_cli_get_message_subcommand_exists() -> None:
+    """parse_args(['get-message', 'my-topic', '0', '42']) parses correctly."""
+    from kafka_mcp.adapters.inbound.cli import parse_args
+
+    ns = parse_args(["get-message", "my-topic", "0", "42"])
+    assert ns.subcommand == "get-message"
+    assert ns.topic == "my-topic"
+    assert ns.partition == 0
+    assert ns.offset == 42
+
+
+def test_cli_get_message_json_output() -> None:
+    """run_get_message with as_json=True prints JSON with base64 raw."""
+    import orjson
+
+    from kafka_mcp.adapters.inbound.cli import run_get_message
+
+    output = _capture_run(
+        run_get_message,
+        MockKafkaClient(),
+        "orders",
+        0,
+        42,
+        as_json=True,
+    )
+    data = orjson.loads(output)
+    assert data["topic"] == "orders"
+    assert data["offset"] == 42
+    # raw must be a string (base64), not bytes
+    assert isinstance(data["raw"], str), (
+        f"raw should be str (base64), got {type(data['raw'])}"
+    )
+
+
+def test_cli_get_message_not_found_exits_1() -> None:
+    """MessageNotFoundError → SystemExit(1) with stderr message."""
+    from kafka_mcp.adapters.inbound.cli import run_get_message
+
+    stderr_out = _capture_stderr(
+        run_get_message,
+        MockKafkaClient(),
+        "missing",
+        0,
+        0,
+        as_json=False,
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        run_get_message(MockKafkaClient(), "missing", 0, 0, as_json=False)
+    assert exc_info.value.code == 1
+    assert "Error" in stderr_out or "missing" in stderr_out
+
+
+def test_cli_get_message_decode_error_exits_2() -> None:
+    """DecodeError → SystemExit(2) with stderr message including reason."""
+    from kafka_mcp.adapters.inbound.cli import run_get_message
+
+    stderr_out = _capture_stderr(
+        run_get_message,
+        MockKafkaClient(),
+        "corrupt",
+        0,
+        0,
+        as_json=False,
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        run_get_message(MockKafkaClient(), "corrupt", 0, 0, as_json=False)
+    assert exc_info.value.code == 2
+    assert "bad magic byte" in stderr_out or "Error" in stderr_out
+
+
+def test_cli_raw_is_base64_in_json() -> None:
+    """JSON output from get-message has raw as base64 string, not bytes."""
+    import orjson
+
+    from kafka_mcp.adapters.inbound.cli import run_get_message
+
+    output = _capture_run(
+        run_get_message,
+        MockKafkaClient(),
+        "orders",
+        0,
+        42,
+        as_json=True,
+    )
+    data = orjson.loads(output)
+    raw_field = data["raw"]
+    assert isinstance(raw_field, str), (
+        f"raw should be str, got {type(raw_field)}"
+    )
+    # Verify it decodes back to original bytes
+    decoded = base64.b64decode(raw_field)
+    assert decoded == _SAMPLE_RAW
+
+
+# ---------------------------------------------------------------------------
 # MCP stdio — search_messages and get_message tools (Phase 2 plan 02-05)
 # ---------------------------------------------------------------------------
 
