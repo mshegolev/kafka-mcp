@@ -1,8 +1,7 @@
 """ConsumerPort — broker consumer protocol.
 
-Pure Protocol definition: no confluent_kafka import here.
-Outbound adapters (adapters/outbound/confluent_consumer.py) implement
-this protocol using the real librdkafka client.
+Pure Protocol definition: no broker library imports here.
+Outbound adapters implement this protocol using the real librdkafka client.
 """
 
 from __future__ import annotations
@@ -16,7 +15,7 @@ class ConsumerPort(Protocol):
 
     Implementations must:
     - Never commit offsets (assign-based, not subscribe-based)
-    - Use a throwaway group id (kafka-mcp-ro-{uuid4})
+    - Use a throwaway group id (e.g. kafka-reader-ro-{uuid4})
     - Set enable.auto.commit=false
     """
 

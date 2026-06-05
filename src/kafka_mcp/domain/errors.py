@@ -1,4 +1,4 @@
-"""Domain error types — typed exceptions for the kafka-mcp domain.
+"""Domain error types — typed exceptions for the Kafka domain layer.
 
 No I/O or framework imports. All errors carry structured context so
 callers can handle them without string parsing.

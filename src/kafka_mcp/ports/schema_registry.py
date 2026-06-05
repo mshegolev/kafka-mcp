@@ -1,6 +1,6 @@
 """SchemaRegistryPort — schema registry protocol.
 
-Pure Protocol definition: no httpx or requests import here.
+Pure Protocol definition: no HTTP library imports here.
 Outbound adapters implement this using HTTP calls to the real registry.
 """
 
