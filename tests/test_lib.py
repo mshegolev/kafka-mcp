@@ -176,7 +176,7 @@ class TestTopicService:
     def _make_service(self) -> object:
         from kafka_mcp.domain.search_service import TopicService
 
-        return TopicService(MockConsumer())
+        return TopicService(MockConsumer(), MockSchemaRegistry())
 
     def test_list_topics_excludes_internal(self) -> None:
         svc = self._make_service()
@@ -224,7 +224,7 @@ class TestTopicService:
         from kafka_mcp.domain.search_service import TopicService
 
         mock = MockConsumer()
-        svc = TopicService(mock)
+        svc = TopicService(mock, MockSchemaRegistry())
         assert svc._consumer is mock
 
 

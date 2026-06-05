@@ -119,6 +119,11 @@ class TestConsumerPort:
             ) -> object:
                 raise NotImplementedError
 
+            def offsets_for_times(
+                self, topic: str, partition: int, timestamp_ms: int
+            ) -> int:
+                return 0
+
         assert isinstance(MockConsumer(), ConsumerPort)
 
     def test_non_compliant_class_fails_isinstance(self) -> None:
@@ -422,6 +427,11 @@ class MockConsumer:
         from kafka_mcp.domain.errors import MessageNotFoundError
 
         raise MessageNotFoundError(topic=topic, partition=partition, offset=offset)
+
+    def offsets_for_times(
+        self, topic: str, partition: int, timestamp_ms: int
+    ) -> int:
+        return 0
 
 
 class MockSchemaRegistry:
