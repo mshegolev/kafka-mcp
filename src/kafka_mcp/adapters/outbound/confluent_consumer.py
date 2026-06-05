@@ -91,6 +91,29 @@ class ConfluentConsumerAdapter:
             names = [n for n in names if not n.startswith("__")]
         return sorted(names)
 
+    def get_partition_ids(self, topic: str) -> list[int]:
+        """Return a sorted list of partition IDs for the given topic.
+
+        Uses ``Consumer.list_topics(topic=topic)`` to fetch per-topic
+        cluster metadata from librdkafka.
+
+        Args:
+            topic: Topic name.
+
+        Returns:
+            Sorted list of partition integer IDs.
+
+        Raises:
+            TopicNotFoundError: When the topic does not exist on the broker.
+        """
+        metadata = self._consumer.list_topics(
+            topic=topic, timeout=10.0
+        )
+        topic_meta = metadata.topics.get(topic)
+        if topic_meta is None or topic_meta.error is not None:
+            raise TopicNotFoundError(topic)
+        return sorted(topic_meta.partitions.keys())
+
     def get_watermark_offsets(
         self, topic: str, partition: int
     ) -> tuple[int, int]:
