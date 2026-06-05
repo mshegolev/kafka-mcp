@@ -303,13 +303,82 @@ class ConfluentConsumerAdapter:
     ) -> KafkaMessage:
         """Fetch a single raw message by exact offset.
 
-        Phase 2 stub — full implementation delivered in plan 02-02.
+        Uses assign() to seek to the exact offset; never uses the
+        group-based subscription API and never commits (KAFKA-06).
+
+        Algorithm:
+        1. Range-check via get_watermark_offsets; raise MessageNotFoundError
+           if offset < low or offset >= high.
+        2. Assign to exact offset and poll with 5× poll_timeout budget
+           (longer single-message window for broker latency).
+        3. None poll result or msg.error() → raise MessageNotFoundError.
+        4. Extract timestamp, key, headers same as fetch_messages.
+        5. Return KafkaMessage(value=None) — decode done by domain service.
+
+        Args:
+            topic: Topic name.
+            partition: Partition index (0-based).
+            offset: Exact offset to fetch.
+
+        Returns:
+            KafkaMessage at the given offset with raw bytes; value is None.
 
         Raises:
-            MessageNotFoundError: When offset is beyond watermarks.
+            MessageNotFoundError: When offset is out of watermark range or
+                Consumer.poll() times out.
         """
-        raise NotImplementedError(
-            "fetch_message not yet implemented — see plan 02-02"
+        low, high = self.get_watermark_offsets(topic, partition)
+        if offset < low or offset >= high:
+            raise MessageNotFoundError(topic, partition, offset)
+
+        tp = TopicPartition(topic, partition, offset)
+        self._consumer.assign([tp])
+
+        msg = self._consumer.poll(
+            timeout=self._settings.poll_timeout * 5
+        )
+        if msg is None:
+            raise MessageNotFoundError(topic, partition, offset)
+        if msg.error():
+            raise MessageNotFoundError(topic, partition, offset)
+
+        # --- timestamp extraction (same as fetch_messages) ---
+        ts_type, ts_ms = msg.timestamp()
+        if ts_type == TIMESTAMP_CREATE_TIME and ts_ms > 0:
+            ts_utc = datetime.fromtimestamp(
+                ts_ms / 1000.0, tz=timezone.utc
+            )
+        else:
+            ts_utc = datetime.now(tz=timezone.utc)
+
+        # --- key (best-effort UTF-8, T-02-03-D) ---
+        raw_key = msg.key()
+        key_str: str | None = (
+            raw_key.decode("utf-8", errors="replace")
+            if raw_key is not None
+            else None
+        )
+
+        # --- headers (best-effort UTF-8, T-02-03-D) ---
+        raw_headers = msg.headers()
+        headers_dict: dict[str, str] = {}
+        if raw_headers:
+            for name, val in raw_headers:
+                headers_dict[name] = (
+                    val.decode("utf-8", errors="replace")
+                    if isinstance(val, bytes)
+                    else str(val)
+                )
+
+        return KafkaMessage(
+            topic=topic,
+            partition=partition,
+            offset=msg.offset(),
+            key=key_str,
+            headers=headers_dict,
+            value=None,
+            timestamp_utc=ts_utc,
+            raw=msg.value() or b"",
         )
 
     # ------------------------------------------------------------------
