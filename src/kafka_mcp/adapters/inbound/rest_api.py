@@ -23,6 +23,9 @@ Usage::
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
@@ -70,16 +73,23 @@ def create_app(client: KafkaClient) -> FastAPI:
     Returns:
         A configured :class:`~fastapi.FastAPI` application instance.
     """
-    app = FastAPI(title="kafka-mcp", description="Read-only Kafka MCP REST adapter")
-
-    @app.on_event("shutdown")
-    def _close_consumer() -> None:
+    @asynccontextmanager
+    async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
         """Release the librdkafka Consumer on server shutdown (WR-02).
 
         The long-lived REST server otherwise leaks a connected consumer
         (background threads/sockets) for the process lifetime.
         """
-        client.close()
+        try:
+            yield
+        finally:
+            client.close()
+
+    app = FastAPI(
+        title="kafka-mcp",
+        description="Read-only Kafka MCP REST adapter",
+        lifespan=_lifespan,
+    )
 
     @app.post("/tools/list_topics")
     def _list_topics(req: ListTopicsRequest) -> dict:
