@@ -6,6 +6,9 @@ errors, port protocols, and config validation are exercised here.
 
 from __future__ import annotations
 
+import subprocess
+from datetime import datetime, timezone
+
 import pytest
 
 from kafka_mcp.domain.errors import ConfigError, TopicNotFoundError
@@ -223,3 +226,144 @@ class TestKafkaMcpSettings:
         repr_str = repr(s)
         assert "topsecret" not in repr_str
         assert "sr-secret" not in repr_str
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: KafkaMessage model (Task 1 RED)
+# ---------------------------------------------------------------------------
+
+
+class TestKafkaMessage:
+    def _make_message(self, **kwargs):  # type: ignore[no-untyped-def]
+        from kafka_mcp.domain.models import KafkaMessage
+
+        defaults = {
+            "topic": "test-topic",
+            "partition": 0,
+            "offset": 42,
+            "key": "some-key",
+            "headers": {"x-trace": "abc"},
+            "value": {"order_id": "ORD-1"},
+            "timestamp_utc": datetime(2026, 6, 5, 12, 0, 0, tzinfo=timezone.utc),
+            "raw": b"\x00\x01\x02",
+        }
+        defaults.update(kwargs)
+        return KafkaMessage(**defaults)
+
+    def test_kafka_message_fields(self) -> None:
+        from kafka_mcp.domain.models import KafkaMessage
+
+        msg = self._make_message()
+        assert msg.topic == "test-topic"
+        assert msg.partition == 0
+        assert msg.offset == 42
+        assert msg.key == "some-key"
+        assert msg.headers == {"x-trace": "abc"}
+        assert msg.value == {"order_id": "ORD-1"}
+        assert isinstance(msg.timestamp_utc, datetime)
+        assert isinstance(msg.raw, bytes)
+
+    def test_kafka_message_key_optional(self) -> None:
+        msg = self._make_message(key=None)
+        assert msg.key is None
+
+    def test_kafka_message_value_optional(self) -> None:
+        msg = self._make_message(value=None)
+        assert msg.value is None
+
+    def test_kafka_message_raw_bytes(self) -> None:
+        msg = self._make_message(raw=b"\xff\xfe\xfd")
+        assert msg.raw == b"\xff\xfe\xfd"
+        assert isinstance(msg.raw, bytes)
+
+    def test_kafka_message_timestamp_utc_is_datetime(self) -> None:
+        msg = self._make_message()
+        assert isinstance(msg.timestamp_utc, datetime)
+
+    def test_kafka_message_evidence_source(self) -> None:
+        msg = self._make_message()
+        assert msg.source == "kafka"
+
+    def test_kafka_message_evidence_event_type(self) -> None:
+        msg = self._make_message()
+        assert msg.event_type == "kafka_message"
+
+    def test_kafka_message_evidence_keys_present(self) -> None:
+        msg = self._make_message()
+        assert "order_id" in msg.keys
+        assert "msisdn" in msg.keys
+        assert "customer_id" in msg.keys
+        assert "product_id" in msg.keys
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: DecodeError (Task 1 RED)
+# ---------------------------------------------------------------------------
+
+
+class TestDecodeError:
+    def test_decode_error_is_domain_exception(self) -> None:
+        from kafka_mcp.domain.errors import DecodeError
+
+        err = DecodeError(
+            topic="payments", partition=0, offset=10, reason="unknown magic byte"
+        )
+        assert isinstance(err, Exception)
+        assert not isinstance(err, ValueError)
+
+    def test_decode_error_carries_topic_partition_offset(self) -> None:
+        from kafka_mcp.domain.errors import DecodeError
+
+        err = DecodeError(topic="events", partition=2, offset=99, reason="bad avro")
+        assert err.topic == "events"
+        assert err.partition == 2
+        assert err.offset == 99
+
+    def test_decode_error_carries_reason(self) -> None:
+        from kafka_mcp.domain.errors import DecodeError
+
+        err = DecodeError(topic="t", partition=0, offset=0, reason="json parse failed")
+        assert err.reason == "json parse failed"
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: MessageNotFoundError (Task 1 RED)
+# ---------------------------------------------------------------------------
+
+
+class TestMessageNotFoundError:
+    def test_message_not_found_error_carries_coordinates(self) -> None:
+        from kafka_mcp.domain.errors import MessageNotFoundError
+
+        err = MessageNotFoundError(topic="orders", partition=1, offset=500)
+        assert err.topic == "orders"
+        assert err.partition == 1
+        assert err.offset == 500
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: Hexagonal boundary check (Task 1 RED)
+# ---------------------------------------------------------------------------
+
+
+class TestHexagonalBoundary:
+    def test_hexagonal_boundary_domain_models(self) -> None:
+        """domain/ must not import any I/O or decode libraries."""
+        result = subprocess.run(
+            [
+                "grep",
+                "-rn",
+                (
+                    "import confluent_kafka"
+                    r"\|import fastavro"
+                    r"\|import avro"
+                    r"\|import google.protobuf"
+                ),
+                "src/kafka_mcp/domain/",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.stdout.strip() == "", (
+            f"Hexagonal boundary violated in domain/:\n{result.stdout}"
+        )
