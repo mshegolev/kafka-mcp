@@ -87,7 +87,24 @@ Schema Registry before the payload is returned.
   4. Evidence fields required by the Investigator Contract are present on every
      returned message: `source="kafka"`, `event_type="kafka_message"`,
      `timestamp_utc`, `keys{order_id, msisdn, customer_id, product_id}`.
-**Plans**: TBD
+**Plans**: 5 plans
+Plans:
+**Wave 1**
+
+- [ ] 02-01-PLAN.md — Domain contracts: KafkaMessage model, DecodeError, MessageNotFoundError, extended ConsumerPort + SchemaRegistryPort
+
+**Wave 2** *(blocked on Wave 1 completion — runs in parallel)*
+
+- [ ] 02-02-PLAN.md — Decode adapter: real SchemaRegistryHttpAdapter with Confluent framing + Avro/Protobuf/JSON decode
+- [ ] 02-03-PLAN.md — Consumer scan adapter: ConfluentConsumerAdapter.fetch_messages + fetch_message + offsets_for_times
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 02-04-PLAN.md — Domain service + KafkaClient: search_messages, get_message, Evidence extraction, lib-layer vertical slice
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 02-05-PLAN.md — Inbound faces: wire search_messages + get_message into MCP stdio, FastAPI REST, CLI
 
 ### Phase 3: Native + Ship
 
@@ -127,5 +144,5 @@ the brick is published to Glama.
 | Phase | Plans Complete | Status      | Completed |
 |-------|----------------|-------------|-----------|
 | 1. Foundation | 4/4 | Complete    | 2026-06-05 |
-| 2. Search + Decode | 0/? | Not started | -    |
+| 2. Search + Decode | 0/5 | Not started | -    |
 | 3. Native + Ship | 0/? | Not started | -      |
