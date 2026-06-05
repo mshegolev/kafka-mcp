@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-06-05T11:42:37.325Z"
+last_updated: "2026-06-05T12:27:46.850Z"
 last_activity: 2026-06-05
 progress:
   total_phases: 3
   completed_phases: 0
   total_plans: 4
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -27,11 +27,11 @@ timelines. Library-first: works in pytest without MCP or FastAPI.
 ## Current Position
 
 Phase: 01 (Foundation) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-06-05
 
-Progress: [█████░░░░░] 50%
+Progress: [████████░░] 75%
 
 ## Performance Metrics
 
@@ -54,6 +54,7 @@ Progress: [█████░░░░░] 50%
 
 *Updated after each plan completion*
 | Phase 01 P01-02 | 20 | 2 tasks | 5 files |
+| Phase 01 P01-03 | 38 | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -70,6 +71,9 @@ Decisions inherited from umbrella spec (D1/D2/D5/D7/D8/D9):
   FastAPI+uvicorn, pydantic v2, orjson; copy v2 skeleton from graphql-mcp.
 
 - [Phase ?]: read-only structural guarantee
+- [Phase ?]: get_partition_ids added to ConsumerPort and ConfluentConsumerAdapter as additive extension
+- [Phase ?]: KafkaClient DI constructor + from_env() classmethod per D-02 library-first Investigator Contract
+- [Phase ?]: config.py ConfigError wrapping handles both pydantic missing-field and value_error types
 
 ### Pending Todos
 
@@ -81,6 +85,6 @@ None yet. Phase 1 starts by copying the graphql-mcp v2 hexagonal skeleton.
 
 ## Session Continuity
 
-Last session: 2026-06-05T11:42:37.318Z
-Stopped at: Roadmap and requirements written; ready for /gsd-plan-phase 1.
+Last session: 2026-06-05T12:27:46.844Z
+Stopped at: Completed 01-03-PLAN.md
 Resume file: None
