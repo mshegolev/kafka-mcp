@@ -11,6 +11,7 @@ Phase 1 success criteria verified here:
 
 from __future__ import annotations
 
+import pathlib
 import subprocess
 import sys
 
@@ -293,20 +294,28 @@ def test_phase1_success_criterion_2_describe_offsets() -> None:
 
 
 def test_phase1_success_criterion_3_hexagonal_boundary() -> None:
-    """SC-3: domain/ directory contains zero confluent_kafka imports."""
+    """SC-3: domain/ and ports/ contain zero confluent_kafka imports.
+
+    WR-04: the pattern catches BOTH ``import confluent_kafka`` and
+    ``from confluent_kafka import X`` (the latter is the more common form
+    and the one the outbound adapter actually uses). cwd is resolved
+    relative to this test file so the guard is portable across machines/CI.
+    """
+    repo_root = pathlib.Path(__file__).resolve().parents[1]
     result = subprocess.run(
         [
             "grep",
-            "-r",
-            "import confluent_kafka",
+            "-rE",
+            r"(import confluent_kafka|from confluent_kafka)",
             "src/kafka_mcp/domain/",
+            "src/kafka_mcp/ports/",
         ],
         capture_output=True,
         text=True,
-        cwd="/opt/develop/aiqa/mcps/kafka-mcp",
+        cwd=str(repo_root),
     )
     assert result.returncode != 0, (
-        f"BOUNDARY VIOLATION: confluent_kafka found in domain/: "
+        f"BOUNDARY VIOLATION: confluent_kafka found in domain/ or ports/: "
         f"{result.stdout}"
     )
 
