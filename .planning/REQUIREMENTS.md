@@ -72,9 +72,9 @@ Build via maturin; CI wheels via cibuildwheel.
 
 | Requirement | Phase | Status  |
 |-------------|-------|---------|
-| KAFKA-01    | 1     | Pending |
-| KAFKA-04    | 1     | Pending |
-| KAFKA-06    | 1     | Pending |
+| KAFKA-01    | 1     | Complete |
+| KAFKA-04    | 1     | Complete |
+| KAFKA-06    | 1     | Complete |
 | KAFKA-02    | 2     | Pending |
 | KAFKA-03    | 2     | Pending |
 | KAFKA-05    | 2     | Pending |

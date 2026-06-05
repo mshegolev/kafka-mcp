@@ -49,7 +49,7 @@ MCP stdio, FastAPI REST, and CLI; read-only guarantee is structurally enforced.
 Plans:
 **Wave 1**
 
-- [ ] 01-01-PLAN.md — Scaffold + domain contracts (models, errors, ports, config)
+- [x] 01-01-PLAN.md — Scaffold + domain contracts (models, errors, ports, config)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -126,6 +126,6 @@ the brick is published to Glama.
 
 | Phase | Plans Complete | Status      | Completed |
 |-------|----------------|-------------|-----------|
-| 1. Foundation | 0/4 | Not started | -         |
+| 1. Foundation | 1/4 | In Progress|  |
 | 2. Search + Decode | 0/? | Not started | -    |
 | 3. Native + Ship | 0/? | Not started | -      |
