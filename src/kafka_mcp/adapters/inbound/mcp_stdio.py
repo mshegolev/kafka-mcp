@@ -29,7 +29,12 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from kafka_mcp.adapters.inbound.lib import KafkaClient
-from kafka_mcp.domain.errors import DecodeError, MessageNotFoundError, TopicNotFoundError
+from kafka_mcp.domain.errors import (
+    DecodeError,
+    MessageNotFoundError,
+    TopicNotFoundError,
+    TransientError,
+)
 from kafka_mcp.domain.models import KafkaMessage
 
 _READ_ONLY = ToolAnnotations(readOnlyHint=True)
@@ -180,6 +185,12 @@ def create_mcp_server(client: KafkaClient) -> FastMCP:
         except MessageNotFoundError as exc:
             raise ValueError(
                 f"Message not found: {exc.topic}[{exc.partition}]@{exc.offset}"
+            ) from exc
+        except TransientError as exc:
+            # WR-05: in-range offset that timed out — transient, not absence.
+            raise ValueError(
+                f"Transient read failure: "
+                f"{exc.topic}[{exc.partition}]@{exc.offset}: {exc.reason}"
             ) from exc
         except DecodeError as exc:
             raise ValueError(

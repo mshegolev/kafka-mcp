@@ -43,6 +43,7 @@ from kafka_mcp.domain.errors import (
     DecodeError,
     MessageNotFoundError,
     TopicNotFoundError,
+    TransientError,
 )
 from kafka_mcp.domain.models import KafkaMessage
 
@@ -392,6 +393,14 @@ def run_get_message(
             file=sys.stderr,
         )
         sys.exit(1)
+    except TransientError as exc:
+        # WR-05: in-range offset that timed out — transient, not a real absence.
+        print(
+            f"Error: transient read failure for "
+            f"{exc.topic}[{exc.partition}]@{exc.offset}: {exc.reason}",
+            file=sys.stderr,
+        )
+        sys.exit(3)
     except DecodeError as exc:
         print(
             f"Error: decode failed for "

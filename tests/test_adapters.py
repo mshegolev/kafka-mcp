@@ -1311,17 +1311,30 @@ class TestFetchMessage:
         assert err.partition == 2
         assert err.offset == 999
 
-    def test_fetch_message_timeout_returns_message_not_found(self) -> None:
-        """Consumer.poll returns None (timeout) → raises MessageNotFoundError."""
-        from kafka_mcp.domain.errors import MessageNotFoundError
+    def test_fetch_message_timeout_for_in_range_offset_is_transient(self) -> None:
+        """WR-05: poll timeout for an IN-RANGE offset → TransientError, not NotFound.
+
+        The offset 5 is within watermarks (0, 100). A None poll therefore means
+        the broker did not deliver within the budget — a transient/operational
+        condition, not a definitive absence.
+        """
+        from kafka_mcp.domain.errors import (
+            MessageNotFoundError,
+            TransientError,
+        )
 
         mock_consumer = MagicMock()
         mock_consumer.get_watermark_offsets.return_value = (0, 100)
         mock_consumer.poll.return_value = None  # timeout
         adapter = _make_consumer_adapter(mock_consumer)
 
-        with pytest.raises(MessageNotFoundError):
+        with pytest.raises(TransientError) as exc_info:
             adapter.fetch_message(topic="orders", partition=0, offset=5)
+        # Must NOT be conflated with a real not-found.
+        assert not isinstance(exc_info.value, MessageNotFoundError)
+        assert exc_info.value.topic == "orders"
+        assert exc_info.value.partition == 0
+        assert exc_info.value.offset == 5
 
     def test_fetch_message_no_subscribe_in_fetch_message(self) -> None:
         """Consumer.subscribe is never called during fetch_message (KAFKA-06)."""

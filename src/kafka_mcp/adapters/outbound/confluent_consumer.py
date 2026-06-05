@@ -24,7 +24,11 @@ from confluent_kafka import Consumer, KafkaError, KafkaException, TopicPartition
 from confluent_kafka import TIMESTAMP_CREATE_TIME
 
 from kafka_mcp.config import KafkaMcpSettings
-from kafka_mcp.domain.errors import MessageNotFoundError, TopicNotFoundError
+from kafka_mcp.domain.errors import (
+    MessageNotFoundError,
+    TopicNotFoundError,
+    TransientError,
+)
 from kafka_mcp.domain.models import KafkaMessage
 
 # Synchronous broker metadata round-trips (list_topics, watermark fetch)
@@ -356,7 +360,8 @@ class ConfluentConsumerAdapter:
            if offset < low or offset >= high.
         2. Assign to exact offset and poll with 5× poll_timeout budget
            (longer single-message window for broker latency).
-        3. None poll result or msg.error() → raise MessageNotFoundError.
+        3. None poll result or msg.error() → raise TransientError (the offset
+           is in range, so a timeout is transient, not a real absence — WR-05).
         4. Extract timestamp, key, headers same as fetch_messages.
         5. Return KafkaMessage(value=None) — decode done by domain service.
 
@@ -369,8 +374,11 @@ class ConfluentConsumerAdapter:
             KafkaMessage at the given offset with raw bytes; value is None.
 
         Raises:
-            MessageNotFoundError: When offset is out of watermark range or
-                Consumer.poll() times out.
+            MessageNotFoundError: When offset is out of watermark range
+                (offset < low or offset >= high).
+            TransientError: When the offset is in range but the broker did not
+                deliver the message within the poll budget (poll timeout or a
+                broker-side error) — a retryable/operational condition.
         """
         low, high = self.get_watermark_offsets(topic, partition)
         if offset < low or offset >= high:
@@ -382,10 +390,26 @@ class ConfluentConsumerAdapter:
         msg = self._consumer.poll(
             timeout=self._settings.poll_timeout * 5
         )
+        # WR-05: the offset is already known to be in range (low <= offset <
+        # high, checked above). A None poll result therefore means the broker
+        # did not deliver the message within the budget — a TRANSIENT/operational
+        # condition, NOT a definitive absence. Mapping it to MessageNotFoundError
+        # would mislead an investigator into believing a known offset has no
+        # message. Raise a transient error instead and reserve
+        # MessageNotFoundError for the watermark range-check.
         if msg is None:
-            raise MessageNotFoundError(topic, partition, offset)
+            raise TransientError(
+                topic, partition, offset,
+                reason=(
+                    "poll timed out for an in-range offset; the message likely "
+                    "exists but was not delivered within the poll budget"
+                ),
+            )
         if msg.error():
-            raise MessageNotFoundError(topic, partition, offset)
+            raise TransientError(
+                topic, partition, offset,
+                reason=f"broker returned an error for in-range offset: {msg.error()}",
+            )
 
         # --- timestamp extraction (same as fetch_messages) ---
         ts_type, ts_ms = msg.timestamp()

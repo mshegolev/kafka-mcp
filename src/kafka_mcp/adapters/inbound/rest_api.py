@@ -39,6 +39,7 @@ from kafka_mcp.domain.errors import (
     DecodeError,
     MessageNotFoundError,
     TopicNotFoundError,
+    TransientError,
 )
 from kafka_mcp.domain.models import KafkaMessage
 
@@ -225,6 +226,18 @@ def create_app(client: KafkaClient) -> FastAPI:
                     "topic": exc.topic,
                     "partition": exc.partition,
                     "offset": exc.offset,
+                },
+            ) from exc
+        except TransientError as exc:
+            # WR-05: in-range offset that timed out — transient, not absence.
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "TransientError",
+                    "topic": exc.topic,
+                    "partition": exc.partition,
+                    "offset": exc.offset,
+                    "reason": exc.reason,
                 },
             ) from exc
         except DecodeError as exc:

@@ -64,6 +64,37 @@ class DecodeError(Exception):
         self.reason = reason
 
 
+class TransientError(Exception):
+    """Raised when a read operation fails for a transient/operational reason.
+
+    Distinct from :class:`MessageNotFoundError`: the requested message may well
+    exist (e.g. the offset is within the partition watermarks) but the broker
+    did not return it within the poll budget. Callers should treat this as a
+    retryable I/O condition, NOT as a definitive "not found" answer.
+
+    Attributes:
+        topic: Topic name.
+        partition: Partition index.
+        offset: Requested offset.
+        reason: Human-readable description of the transient failure.
+
+    Example::
+
+        raise TransientError("orders", 0, 5, "poll timed out for in-range offset")
+    """
+
+    def __init__(
+        self, topic: str, partition: int, offset: int, reason: str
+    ) -> None:
+        super().__init__(
+            f"Transient read failure for {topic}[{partition}]@{offset}: {reason}"
+        )
+        self.topic = topic
+        self.partition = partition
+        self.offset = offset
+        self.reason = reason
+
+
 class MessageNotFoundError(Exception):
     """Raised when a message at the requested coordinates does not exist.
 
