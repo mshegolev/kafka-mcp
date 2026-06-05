@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-06-05T19:00:52.812Z"
+last_updated: "2026-06-05T19:34:57.350Z"
 last_activity: 2026-06-05
 progress:
   total_phases: 3
   completed_phases: 1
   total_plans: 9
-  completed_plans: 6
+  completed_plans: 7
   percent: 33
 ---
 
@@ -27,11 +27,11 @@ timelines. Library-first: works in pytest without MCP or FastAPI.
 ## Current Position
 
 Phase: 2 (Search + Decode) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-06-05
 
-Progress: [███████░░░] 67%
+Progress: [████████░░] 78%
 
 ## Performance Metrics
 
@@ -82,6 +82,9 @@ Decisions inherited from umbrella spec (D1/D2/D5/D7/D8/D9):
 - [Phase ?]: KafkaMessage.keys default_factory produces {order_id,msisdn,customer_id,product_id:None}
 - [Phase ?]: DecodeError and MessageNotFoundError inherit Exception (not ValueError) for clean catch hierarchy
 - [Phase ?]: Adapter stubs (NotImplementedError) added in 02-01 so Protocol isinstance checks pass; real impl in 02-02/02-03
+- [Phase ?]: fetch_messages scan exits on stop_offset/limit/max_scan/time_to/None-poll
+- [Phase ?]: fetch_message uses 5x poll_timeout; out-of-range offset raises MessageNotFoundError
+- [Phase ?]: subscribe() absent from consumer adapter source; test_no_subscribe_in_source verifies at runtime
 
 ### Pending Todos
 
@@ -93,6 +96,6 @@ None yet. Phase 1 starts by copying the graphql-mcp v2 hexagonal skeleton.
 
 ## Session Continuity
 
-Last session: 2026-06-05T19:00:52.807Z
+Last session: 2026-06-05T19:33:12.411Z
 Stopped at: Completed 02-01-PLAN.md
 Resume file: None

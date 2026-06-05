@@ -96,7 +96,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion — runs in parallel)*
 
 - [x] 02-02-PLAN.md — Decode adapter: real SchemaRegistryHttpAdapter with Confluent framing + Avro/Protobuf/JSON decode
-- [ ] 02-03-PLAN.md — Consumer scan adapter: ConfluentConsumerAdapter.fetch_messages + fetch_message + offsets_for_times
+- [x] 02-03-PLAN.md — Consumer scan adapter: ConfluentConsumerAdapter.fetch_messages + fetch_message + offsets_for_times
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -144,5 +144,5 @@ the brick is published to Glama.
 | Phase | Plans Complete | Status      | Completed |
 |-------|----------------|-------------|-----------|
 | 1. Foundation | 4/4 | Complete    | 2026-06-05 |
-| 2. Search + Decode | 2/5 | In Progress|  |
+| 2. Search + Decode | 3/5 | In Progress|  |
 | 3. Native + Ship | 0/? | Not started | -      |
