@@ -6,7 +6,11 @@ Outbound adapters implement this protocol using the real librdkafka client.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol, runtime_checkable
+
+from kafka_mcp.domain.errors import MessageNotFoundError
+from kafka_mcp.domain.models import KafkaMessage
 
 
 @runtime_checkable
@@ -56,5 +60,60 @@ class ConsumerPort(Protocol):
 
         Raises:
             TopicNotFoundError: When the topic does not exist on the broker.
+        """
+        ...
+
+    def fetch_messages(
+        self,
+        topic: str,
+        partition: int,
+        start_offset: int,
+        stop_offset: int,
+        time_to: datetime | None,
+        limit: int,
+    ) -> list[KafkaMessage]:
+        """Consume messages from [start_offset, stop_offset) bounded by time_to
+        and limit.
+
+        Returns KafkaMessage objects with raw bytes; decode is NOT performed
+        here.  Never commits offsets (assign-based, KAFKA-06).
+
+        Args:
+            topic: Topic name.
+            partition: Partition index (0-based).
+            start_offset: Inclusive start offset for the scan.
+            stop_offset: Exclusive stop offset for the scan.
+            time_to: Optional upper bound on message timestamp (UTC-aware).
+                Scan stops when the first message with
+                ``timestamp_utc >= time_to`` is encountered.
+            limit: Maximum number of messages to return from this call.
+
+        Returns:
+            List of KafkaMessage objects (may be empty).
+        """
+        ...
+
+    def fetch_message(
+        self,
+        topic: str,
+        partition: int,
+        offset: int,
+    ) -> KafkaMessage:
+        """Fetch a single raw message by exact offset.
+
+        Raises MessageNotFoundError when offset is beyond watermarks.
+        Returns KafkaMessage with raw bytes; decode is NOT performed here.
+
+        Args:
+            topic: Topic name.
+            partition: Partition index (0-based).
+            offset: Exact offset to fetch.
+
+        Returns:
+            KafkaMessage at the given offset.
+
+        Raises:
+            MessageNotFoundError: When the offset is beyond the partition
+                watermarks or no message exists at that offset.
         """
         ...

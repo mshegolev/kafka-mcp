@@ -51,6 +51,18 @@ class SchemaRegistryHttpAdapter:
         self._user = user
         self._password = password
 
+    def decode(self, raw: bytes) -> dict | None:
+        """Decode a raw wire-format message payload to a plain dict.
+
+        Phase 2 stub — full implementation (Confluent magic-byte framing +
+        Avro/Protobuf/JSON fallback) delivered in plan 02-03.
+
+        Returns:
+            ``None`` in Phase 1 stub.
+        """
+        # Phase 2 implementation replaces this stub in plan 02-03.
+        return None
+
     def get_schema(self, subject: str) -> dict | None:
         """Fetch the latest schema for the given subject.
 

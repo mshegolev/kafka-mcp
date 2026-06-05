@@ -6,7 +6,9 @@ Outbound adapters implement this using HTTP calls to the real registry.
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
+
+from kafka_mcp.domain.errors import DecodeError
 
 
 @runtime_checkable
@@ -25,5 +27,27 @@ class SchemaRegistryPort(Protocol):
 
         Returns:
             Schema dict if found, None if subject does not exist.
+        """
+        ...
+
+    def decode(self, raw: bytes) -> dict[str, Any] | None:
+        """Decode a raw wire-format message payload to a plain dict.
+
+        Returns None when the payload cannot be decoded (resilient path
+        for search_messages).  Raises DecodeError (for get_message path —
+        callers choose whether to propagate).
+
+        Confluent magic-byte framing (0x00 + 4-byte schema_id) is handled
+        in the implementation; json.loads fallback when framing is absent.
+
+        Args:
+            raw: Raw bytes from the Kafka message value field.
+
+        Returns:
+            Decoded dict, or None if decoding is not possible.
+
+        Raises:
+            DecodeError: When the caller wants a hard failure on decode
+                errors (single-message get_message path).
         """
         ...

@@ -103,6 +103,22 @@ class TestConsumerPort:
             def get_partition_ids(self, topic: str) -> list[int]:
                 return [0]
 
+            def fetch_messages(
+                self,
+                topic: str,
+                partition: int,
+                start_offset: int,
+                stop_offset: int,
+                time_to: datetime | None,
+                limit: int,
+            ) -> list:
+                return []
+
+            def fetch_message(
+                self, topic: str, partition: int, offset: int
+            ) -> object:
+                raise NotImplementedError
+
         assert isinstance(MockConsumer(), ConsumerPort)
 
     def test_non_compliant_class_fails_isinstance(self) -> None:
@@ -123,6 +139,9 @@ class TestSchemaRegistryPort:
     def test_compliant_class_passes_isinstance(self) -> None:
         class MockRegistry:
             def get_schema(self, subject: str) -> dict | None:
+                return None
+
+            def decode(self, raw: bytes) -> dict | None:
                 return None
 
         assert isinstance(MockRegistry(), SchemaRegistryPort)

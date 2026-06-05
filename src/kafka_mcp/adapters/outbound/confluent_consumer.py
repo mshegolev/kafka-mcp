@@ -16,13 +16,15 @@ and never stored or logged.
 
 from __future__ import annotations
 
+from datetime import datetime
 from types import TracebackType
 from uuid import uuid4
 
 from confluent_kafka import Consumer, KafkaError, KafkaException
 
 from kafka_mcp.config import KafkaMcpSettings
-from kafka_mcp.domain.errors import TopicNotFoundError
+from kafka_mcp.domain.errors import MessageNotFoundError, TopicNotFoundError
+from kafka_mcp.domain.models import KafkaMessage
 
 # Synchronous broker metadata round-trips (list_topics, watermark fetch)
 # use a generous fixed budget. This is deliberately NOT poll_timeout, which
@@ -182,6 +184,45 @@ class ConfluentConsumerAdapter:
                 raise TopicNotFoundError(topic) from exc
             raise
         return (low, high)
+
+    def fetch_messages(
+        self,
+        topic: str,
+        partition: int,
+        start_offset: int,
+        stop_offset: int,
+        time_to: datetime | None,
+        limit: int,
+    ) -> list[KafkaMessage]:
+        """Consume messages from [start_offset, stop_offset) bounded by
+        time_to and limit.
+
+        Phase 2 stub — full implementation delivered in plan 02-02
+        (ConfluentConsumerAdapter Phase 2 extension).
+
+        Returns KafkaMessage objects with raw bytes; decode is NOT performed.
+        Never commits offsets (assign-based, KAFKA-06).
+        """
+        raise NotImplementedError(
+            "fetch_messages not yet implemented — see plan 02-02"
+        )
+
+    def fetch_message(
+        self,
+        topic: str,
+        partition: int,
+        offset: int,
+    ) -> KafkaMessage:
+        """Fetch a single raw message by exact offset.
+
+        Phase 2 stub — full implementation delivered in plan 02-02.
+
+        Raises:
+            MessageNotFoundError: When offset is beyond watermarks.
+        """
+        raise NotImplementedError(
+            "fetch_message not yet implemented — see plan 02-02"
+        )
 
     # ------------------------------------------------------------------
     # Context manager
