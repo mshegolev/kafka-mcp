@@ -120,8 +120,24 @@ class ConfluentConsumerAdapter:
             topic=topic, timeout=10.0
         )
         topic_meta = metadata.topics.get(topic)
-        if topic_meta is None or topic_meta.error is not None:
+        if topic_meta is None:
             raise TopicNotFoundError(topic)
+        # WR-01: mirror the WR-04 code-discrimination from
+        # get_watermark_offsets. TopicMetadata.error is also set for
+        # transient/operational conditions (LEADER_NOT_AVAILABLE,
+        # REPLICA_NOT_AVAILABLE during a rebalance/election). Only genuine
+        # unknown-topic/partition codes mean "not found"; everything else
+        # must surface unchanged so a live topic in a transient state isn't
+        # reported as missing (and 404'd by the REST adapter).
+        err = topic_meta.error
+        if err is not None:
+            if err.code() in (
+                KafkaError.UNKNOWN_TOPIC_OR_PART,
+                KafkaError._UNKNOWN_TOPIC,
+                KafkaError._UNKNOWN_PARTITION,
+            ):
+                raise TopicNotFoundError(topic)
+            raise KafkaException(err)
         return sorted(topic_meta.partitions.keys())
 
     def get_watermark_offsets(
