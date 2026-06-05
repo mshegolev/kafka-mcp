@@ -367,3 +367,68 @@ class TestHexagonalBoundary:
         assert result.stdout.strip() == "", (
             f"Hexagonal boundary violated in domain/:\n{result.stdout}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: Port protocol extensions (Task 2 RED)
+# ---------------------------------------------------------------------------
+
+
+class MockConsumer:
+    """Full-protocol mock used across port contract tests."""
+
+    def list_topics(self, include_internal: bool = False) -> list[str]:
+        return []
+
+    def get_watermark_offsets(
+        self, topic: str, partition: int
+    ) -> tuple[int, int]:
+        return (0, 0)
+
+    def get_partition_ids(self, topic: str) -> list[int]:
+        return [0]
+
+    def fetch_messages(
+        self,
+        topic: str,
+        partition: int,
+        start_offset: int,
+        stop_offset: int,
+        time_to: datetime | None,
+        limit: int,
+    ):  # type: ignore[return]
+        return []
+
+    def fetch_message(self, topic: str, partition: int, offset: int):  # type: ignore[return]
+        from kafka_mcp.domain.errors import MessageNotFoundError
+
+        raise MessageNotFoundError(topic=topic, partition=partition, offset=offset)
+
+
+class MockSchemaRegistry:
+    """Full-protocol mock for SchemaRegistryPort including decode."""
+
+    def get_schema(self, subject: str) -> dict | None:
+        return None
+
+    def decode(self, raw: bytes) -> dict | None:
+        return None
+
+
+class TestConsumerPortExtended:
+    def test_consumer_port_has_fetch_messages(self) -> None:
+        assert hasattr(ConsumerPort, "fetch_messages")
+
+    def test_consumer_port_has_fetch_message(self) -> None:
+        assert hasattr(ConsumerPort, "fetch_message")
+
+    def test_consumer_port_mock_implements_protocol(self) -> None:
+        assert isinstance(MockConsumer(), ConsumerPort)
+
+
+class TestSchemaRegistryPortExtended:
+    def test_schema_registry_port_has_decode(self) -> None:
+        assert hasattr(SchemaRegistryPort, "decode")
+
+    def test_schema_registry_port_mock_implements(self) -> None:
+        assert isinstance(MockSchemaRegistry(), SchemaRegistryPort)
