@@ -194,14 +194,19 @@ def main(argv: list[str] | None = None) -> None:
 
     client = KafkaClient.from_env()
 
-    if ns.subcommand == "list-topics":
-        run_list_topics(
-            client,
-            include_internal=ns.include_internal,
-            as_json=ns.json,
-        )
-    elif ns.subcommand == "describe-topic":
-        run_describe_topic(client, ns.topic, as_json=ns.json)
-    else:
-        parser.print_help()
-        sys.exit(1)
+    # WR-02: ensure the underlying librdkafka Consumer is closed even though
+    # the process is short-lived, so the documented cleanup contract holds.
+    try:
+        if ns.subcommand == "list-topics":
+            run_list_topics(
+                client,
+                include_internal=ns.include_internal,
+                as_json=ns.json,
+            )
+        elif ns.subcommand == "describe-topic":
+            run_describe_topic(client, ns.topic, as_json=ns.json)
+        else:
+            parser.print_help()
+            sys.exit(1)
+    finally:
+        client.close()

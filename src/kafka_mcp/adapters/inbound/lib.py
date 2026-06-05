@@ -22,6 +22,8 @@ any value.  Callers must not log exc.args as it may contain partial config.
 
 from __future__ import annotations
 
+from types import TracebackType
+
 from kafka_mcp.adapters.outbound.confluent_consumer import (
     ConfluentConsumerAdapter,
 )
@@ -112,3 +114,31 @@ ConfluentConsumerAdapter`.
             TopicNotFoundError: If the topic does not exist on the broker.
         """
         return self._service.describe_topic(topic)
+
+    # ------------------------------------------------------------------
+    # Lifecycle (WR-02): the underlying librdkafka Consumer holds
+    # background threads/sockets that must be released on shutdown.
+    # ------------------------------------------------------------------
+
+    def close(self) -> None:
+        """Close the underlying consumer, releasing broker resources.
+
+        Delegates to the injected consumer's ``close()`` when available.
+        Mock consumers used in tests may omit ``close()``; in that case
+        this is a no-op so dependency-injected test doubles keep working.
+        """
+        close = getattr(self._consumer, "close", None)
+        if callable(close):
+            close()
+
+    def __enter__(self) -> "KafkaClient":
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        """Close the underlying consumer regardless of exceptions."""
+        self.close()

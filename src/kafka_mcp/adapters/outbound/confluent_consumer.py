@@ -150,6 +150,15 @@ class ConfluentConsumerAdapter:
     # Context manager
     # ------------------------------------------------------------------
 
+    def close(self) -> None:
+        """Close the underlying librdkafka Consumer.
+
+        Releases background threads, sockets and the broker connection.
+        Safe to call directly (e.g. from a facade ``close()``) as well as
+        via the context-manager protocol.
+        """
+        self._consumer.close()
+
     def __enter__(self) -> "ConfluentConsumerAdapter":
         return self
 
@@ -160,4 +169,4 @@ class ConfluentConsumerAdapter:
         exc_tb: TracebackType | None,
     ) -> None:
         """Close the underlying Consumer regardless of exceptions."""
-        self._consumer.close()
+        self.close()

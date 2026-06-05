@@ -72,6 +72,15 @@ def create_app(client: KafkaClient) -> FastAPI:
     """
     app = FastAPI(title="kafka-mcp", description="Read-only Kafka MCP REST adapter")
 
+    @app.on_event("shutdown")
+    def _close_consumer() -> None:
+        """Release the librdkafka Consumer on server shutdown (WR-02).
+
+        The long-lived REST server otherwise leaks a connected consumer
+        (background threads/sockets) for the process lifetime.
+        """
+        client.close()
+
     @app.post("/tools/list_topics")
     def _list_topics(req: ListTopicsRequest) -> dict:
         """Return a sorted list of topic names.

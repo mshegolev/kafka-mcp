@@ -51,7 +51,11 @@ def main() -> None:
 
         client = KafkaClient.from_env()
         server = create_mcp_server(client)
-        server.run("stdio")
+        # WR-02: close the underlying Consumer when the stdio server exits.
+        try:
+            server.run("stdio")
+        finally:
+            client.close()
         return
 
     # CLI mode: kafka-mcp list-topics | describe-topic ...
@@ -69,6 +73,8 @@ def main() -> None:
     from kafka_mcp.adapters.inbound.rest_api import create_app
 
     client = KafkaClient.from_env()
+    # create_app registers a FastAPI shutdown hook that calls client.close()
+    # so the librdkafka Consumer is released on server shutdown (WR-02).
     app = create_app(client)
     # Secure default: bind to loopback. Exposing the unauthenticated HTTP face on
     # all interfaces requires an explicit KAFKA_MCP_HOST=0.0.0.0 opt-in.

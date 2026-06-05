@@ -181,6 +181,48 @@ class TestKafkaClient:
             KafkaClient.from_env()
 
 
+class TestKafkaClientLifecycle:
+    """WR-02: KafkaClient closes its underlying consumer."""
+
+    def test_close_delegates_to_consumer(self) -> None:
+        from kafka_mcp.adapters.inbound.lib import KafkaClient
+
+        class ClosableConsumer(MockConsumer):
+            def __init__(self) -> None:
+                self.closed = False
+
+            def close(self) -> None:
+                self.closed = True
+
+        consumer = ClosableConsumer()
+        client = KafkaClient(consumer)
+        client.close()
+        assert consumer.closed is True
+
+    def test_context_manager_closes_consumer(self) -> None:
+        from kafka_mcp.adapters.inbound.lib import KafkaClient
+
+        class ClosableConsumer(MockConsumer):
+            def __init__(self) -> None:
+                self.closed = False
+
+            def close(self) -> None:
+                self.closed = True
+
+        consumer = ClosableConsumer()
+        with KafkaClient(consumer) as client:
+            assert client.list_topics() is not None
+        assert consumer.closed is True
+
+    def test_close_noop_when_consumer_has_no_close(self) -> None:
+        """Mock consumers without close() must not break client.close()."""
+        from kafka_mcp.adapters.inbound.lib import KafkaClient
+
+        client = KafkaClient(MockConsumer())
+        # Must not raise even though MockConsumer has no close().
+        client.close()
+
+
 class TestConfigErrorContract:
     """WR-01: every invalid env var surfaces as ConfigError (D-04).
 
