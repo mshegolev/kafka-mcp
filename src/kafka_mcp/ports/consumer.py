@@ -44,3 +44,17 @@ class ConsumerPort(Protocol):
             Tuple of (earliest_offset, latest_offset).
         """
         ...
+
+    def get_partition_ids(self, topic: str) -> list[int]:
+        """Return a sorted list of partition IDs for the given topic.
+
+        Args:
+            topic: Topic name.
+
+        Returns:
+            Sorted list of partition integer IDs (e.g. [0, 1, 2]).
+
+        Raises:
+            TopicNotFoundError: When the topic does not exist on the broker.
+        """
+        ...
