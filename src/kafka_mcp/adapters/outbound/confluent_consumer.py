@@ -19,7 +19,12 @@ from __future__ import annotations
 from types import TracebackType
 from uuid import uuid4
 
-from confluent_kafka import Consumer, KafkaException
+from confluent_kafka import Consumer, KafkaError, KafkaException
+
+# Synchronous broker metadata round-trips (list_topics, watermark fetch)
+# use a generous fixed budget. This is deliberately NOT poll_timeout, which
+# is reserved for actual consumer.poll() calls (WR-03).
+_METADATA_TIMEOUT_SECONDS = 10.0
 
 from kafka_mcp.config import KafkaMcpSettings
 from kafka_mcp.domain.errors import TopicNotFoundError
@@ -139,11 +144,28 @@ class ConfluentConsumerAdapter:
                 for an unknown topic/partition.
         """
         try:
+            # WR-03: a watermark fetch is a synchronous broker metadata
+            # round-trip, not a consumer.poll(); use the dedicated metadata
+            # budget so broker latency / many partitions don't spuriously
+            # raise (and then get mis-mapped to TopicNotFoundError).
             low, high = self._consumer.get_watermark_offsets(
-                topic, partition, timeout=self._settings.poll_timeout
+                topic, partition, timeout=_METADATA_TIMEOUT_SECONDS
             )
         except KafkaException as exc:
-            raise TopicNotFoundError(topic) from exc
+            # WR-04: only genuine unknown-topic / unknown-partition errors
+            # mean "not found". Transient/operational failures (timeout,
+            # broker unavailable, transport, auth) must surface unchanged so
+            # an outage isn't reported as a missing topic (and 404'd by REST).
+            code = None
+            if exc.args and hasattr(exc.args[0], "code"):
+                code = exc.args[0].code()
+            if code in (
+                KafkaError.UNKNOWN_TOPIC_OR_PART,
+                KafkaError._UNKNOWN_TOPIC,
+                KafkaError._UNKNOWN_PARTITION,
+            ):
+                raise TopicNotFoundError(topic) from exc
+            raise
         return (low, high)
 
     # ------------------------------------------------------------------

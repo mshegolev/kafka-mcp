@@ -143,18 +143,71 @@ class TestConfluentConsumerAdapterWatermarks:
         mock_consumer.get_watermark_offsets.assert_called_once()
 
     def test_get_watermark_offsets_raises_topic_not_found(self) -> None:
-        from confluent_kafka import KafkaException
+        from confluent_kafka import KafkaError, KafkaException
 
         from kafka_mcp.domain.errors import TopicNotFoundError
 
         mock_consumer = MagicMock()
         mock_consumer.get_watermark_offsets.side_effect = KafkaException(
-            "Unknown topic"
+            KafkaError(KafkaError.UNKNOWN_TOPIC_OR_PART)
         )
         adapter = self._make_adapter(mock_consumer)
         with pytest.raises(TopicNotFoundError) as exc_info:
             adapter.get_watermark_offsets("nonexistent", 0)
         assert exc_info.value.topic == "nonexistent"
+
+    def test_get_watermark_offsets_unknown_partition_is_not_found(
+        self,
+    ) -> None:
+        """Unknown-partition codes also map to TopicNotFoundError (WR-04)."""
+        from confluent_kafka import KafkaError, KafkaException
+
+        from kafka_mcp.domain.errors import TopicNotFoundError
+
+        mock_consumer = MagicMock()
+        mock_consumer.get_watermark_offsets.side_effect = KafkaException(
+            KafkaError(KafkaError._UNKNOWN_PARTITION)
+        )
+        adapter = self._make_adapter(mock_consumer)
+        with pytest.raises(TopicNotFoundError):
+            adapter.get_watermark_offsets("payments", 99)
+
+    def test_get_watermark_offsets_transient_error_reraised(self) -> None:
+        """Transient/operational KafkaExceptions must NOT become 404 (WR-04).
+
+        A broker outage / transport error / timeout should surface as the
+        original KafkaException, not as TopicNotFoundError.
+        """
+        from confluent_kafka import KafkaError, KafkaException
+
+        from kafka_mcp.domain.errors import TopicNotFoundError
+
+        mock_consumer = MagicMock()
+        mock_consumer.get_watermark_offsets.side_effect = KafkaException(
+            KafkaError(KafkaError._TRANSPORT)
+        )
+        adapter = self._make_adapter(mock_consumer)
+        with pytest.raises(KafkaException):
+            adapter.get_watermark_offsets("payments", 0)
+        # And specifically NOT mistranslated to "not found".
+        mock_consumer.get_watermark_offsets.side_effect = KafkaException(
+            KafkaError(KafkaError._TRANSPORT)
+        )
+        with pytest.raises(KafkaException):
+            try:
+                adapter.get_watermark_offsets("payments", 0)
+            except TopicNotFoundError:  # pragma: no cover - regression guard
+                pytest.fail("transient error mistranslated to TopicNotFound")
+
+    def test_get_watermark_offsets_uses_metadata_timeout(self) -> None:
+        """WR-03: watermark fetch uses the 10s metadata budget, not poll_timeout."""
+        mock_consumer = MagicMock()
+        mock_consumer.get_watermark_offsets.return_value = (0, 10)
+        adapter = self._make_adapter(mock_consumer)
+        adapter.get_watermark_offsets("payments", 0)
+        _args, kwargs = mock_consumer.get_watermark_offsets.call_args
+        # poll_timeout default is 1.0; the metadata budget is 10.0.
+        assert kwargs.get("timeout") == 10.0
 
 
 # ---------------------------------------------------------------------------
