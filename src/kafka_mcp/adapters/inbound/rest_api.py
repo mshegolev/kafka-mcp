@@ -32,7 +32,6 @@ from pydantic import BaseModel
 from kafka_mcp.adapters.inbound.lib import KafkaClient
 from kafka_mcp.domain.errors import TopicNotFoundError
 
-
 # ---------------------------------------------------------------------------
 # Request models (T-04-01: Pydantic validates inputs at the boundary)
 # ---------------------------------------------------------------------------

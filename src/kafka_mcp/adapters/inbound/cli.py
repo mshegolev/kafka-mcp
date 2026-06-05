@@ -33,7 +33,6 @@ from kafka_mcp.adapters.inbound.lib import KafkaClient
 from kafka_mcp.adapters.outbound.json_orjson import orjson_dumps
 from kafka_mcp.domain.errors import TopicNotFoundError
 
-
 # ---------------------------------------------------------------------------
 # Argument parser
 # ---------------------------------------------------------------------------
