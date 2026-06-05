@@ -117,3 +117,25 @@ class ConsumerPort(Protocol):
                 watermarks or no message exists at that offset.
         """
         ...
+
+    def offsets_for_times(
+        self,
+        topic: str,
+        partition: int,
+        timestamp_ms: int,
+    ) -> int:
+        """Return the start offset for messages at or after timestamp_ms.
+
+        Returns the earliest offset when timestamp_ms is before the first
+        message in the partition (OFFSET_BEGINNING sentinel = -2).
+
+        Args:
+            topic: Topic name.
+            partition: Partition index (0-based).
+            timestamp_ms: POSIX millisecond timestamp to seek from.
+
+        Returns:
+            Offset of the first message at or after timestamp_ms, or -2
+            (OFFSET_BEGINNING) if timestamp_ms is before the earliest message.
+        """
+        ...

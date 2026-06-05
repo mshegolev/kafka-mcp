@@ -7,21 +7,57 @@ Phase 1 success criteria verified here:
   SC-1: lib-first proof (KafkaClient works without MCP/FastAPI)
   SC-2: describe_topic returns TopicInfo with per-partition offsets
   SC-3: hexagonal boundary (domain/ has zero confluent_kafka imports)
+
+Phase 2 success criteria verified here:
+  SC-1: search_messages returns list[KafkaMessage] with all fields present
+  SC-2: get_message returns KafkaMessage with decoded value
+  SC-3: resilient decode in search / raising decode in get_message
+  SC-4: Evidence keys (source/event_type/keys) on returned messages
 """
 
 from __future__ import annotations
 
 import pathlib
 import subprocess
+from datetime import datetime, timezone
+from typing import Any
 
 import pytest
 
-from kafka_mcp.domain.errors import ConfigError, TopicNotFoundError
-from kafka_mcp.domain.models import TopicInfo
+from kafka_mcp.domain.errors import (
+    ConfigError,
+    DecodeError,
+    MessageNotFoundError,
+    TopicNotFoundError,
+)
+from kafka_mcp.domain.models import KafkaMessage, TopicInfo
 
 # ---------------------------------------------------------------------------
 # Mock ConsumerPort (no real broker needed)
 # ---------------------------------------------------------------------------
+
+_NOW_UTC = datetime.now(tz=timezone.utc)
+
+
+def _make_raw_msg(
+    topic: str,
+    partition: int,
+    offset: int,
+    key: str | None = None,
+    headers: dict[str, str] | None = None,
+    raw: bytes = b"{}",
+) -> KafkaMessage:
+    """Helper to build a KafkaMessage with value=None (raw only)."""
+    return KafkaMessage(
+        topic=topic,
+        partition=partition,
+        offset=offset,
+        key=key,
+        headers=headers or {},
+        value=None,
+        timestamp_utc=_NOW_UTC,
+        raw=raw,
+    )
 
 
 class MockConsumer:
@@ -66,6 +102,67 @@ class MockConsumer:
         if topic not in self._PARTITION_IDS:
             raise TopicNotFoundError(topic)
         return self._OFFSETS.get(partition, (0, 0))
+
+    def fetch_messages(
+        self,
+        topic: str,
+        partition: int,
+        start_offset: int,
+        stop_offset: int,
+        time_to: datetime | None,
+        limit: int,
+    ) -> list[KafkaMessage]:
+        """Default stub: returns empty list (override in subclasses)."""
+        return []
+
+    def fetch_message(
+        self,
+        topic: str,
+        partition: int,
+        offset: int,
+    ) -> KafkaMessage:
+        """Default stub: raises MessageNotFoundError (override in subclasses)."""
+        raise MessageNotFoundError(topic, partition, offset)
+
+    def offsets_for_times(
+        self,
+        topic: str,
+        partition: int,
+        timestamp_ms: int,
+    ) -> int:
+        """Default stub: returns 0 (use low watermark)."""
+        return 0
+
+
+# ---------------------------------------------------------------------------
+# Mock SchemaRegistryPort (no real SR needed)
+# ---------------------------------------------------------------------------
+
+
+class MockSchemaRegistry:
+    """Neutral in-memory SchemaRegistryPort stub.
+
+    By default decode() returns {} (empty dict — neutral, matches anything).
+    Override _decode_result in subclasses or pass a callable to control.
+    """
+
+    def __init__(
+        self,
+        decode_result: dict[str, Any] | None = None,
+        raise_decode_error: bool = False,
+        decode_topic: str = "test",
+    ) -> None:
+        self._decode_result = decode_result if decode_result is not None else {}
+        self._raise_decode_error = raise_decode_error
+        self._decode_topic = decode_topic
+
+    def get_schema(self, subject: str) -> dict | None:
+        return None
+
+    def decode(self, raw: bytes) -> dict[str, Any] | None:
+        if self._raise_decode_error:
+            raise DecodeError(self._decode_topic, 0, 0, "mock decode failure")
+        return self._decode_result
 
 
 # ---------------------------------------------------------------------------
@@ -339,3 +436,237 @@ def test_top_level_package_exports_all_public_types() -> None:
         TopicInfo,
         TopicNotFoundError,
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 Task 1: TopicService.search_messages RED tests
+# ---------------------------------------------------------------------------
+
+
+class MockConsumerWithMessages(MockConsumer):
+    """MockConsumer that returns a configurable list of messages."""
+
+    def __init__(self, messages: list[KafkaMessage] | None = None) -> None:
+        self._messages = messages or []
+
+    def fetch_messages(
+        self,
+        topic: str,
+        partition: int,
+        start_offset: int,
+        stop_offset: int,
+        time_to: datetime | None,
+        limit: int,
+    ) -> list[KafkaMessage]:
+        # Return up to `limit` messages matching this topic/partition
+        result = [
+            m for m in self._messages
+            if m.topic == topic and m.partition == partition
+        ]
+        return result[:limit]
+
+    def offsets_for_times(
+        self,
+        topic: str,
+        partition: int,
+        timestamp_ms: int,
+    ) -> int:
+        return 0
+
+
+def _make_service(
+    consumer: MockConsumer | None = None,
+    registry: MockSchemaRegistry | None = None,
+) -> object:
+    from kafka_mcp.domain.search_service import TopicService
+
+    return TopicService(
+        consumer or MockConsumer(),
+        registry or MockSchemaRegistry(),
+    )
+
+
+class TestTopicServiceSearchMessages:
+    """Phase 2 RED tests for TopicService.search_messages."""
+
+    def test_search_messages_returns_matching_by_key(self) -> None:
+        """Mock consumer returns 2 messages; one matches key → 1 result."""
+        msgs = [
+            _make_raw_msg("orders", 0, 0, key="match-key"),
+            _make_raw_msg("orders", 0, 1, key="other-key"),
+        ]
+        consumer = MockConsumerWithMessages(msgs)
+        registry = MockSchemaRegistry(decode_result={"data": "value"})
+        svc = _make_service(consumer, registry)
+
+        results = svc.search_messages("match-key")
+        assert len(results) == 1
+        assert results[0].key == "match-key"
+
+    def test_search_messages_key_field_header(self) -> None:
+        """key_field='header:x-order-id' matches message with that header."""
+        msgs = [
+            _make_raw_msg(
+                "orders", 0, 0, key="any",
+                headers={"x-order-id": "ORD-123"},
+            ),
+            _make_raw_msg("orders", 0, 1, key="any", headers={}),
+        ]
+        consumer = MockConsumerWithMessages(msgs)
+        svc = _make_service(consumer)
+
+        results = svc.search_messages(
+            "ORD-123", key_field="header:x-order-id"
+        )
+        assert len(results) == 1
+        assert results[0].headers.get("x-order-id") == "ORD-123"
+
+    def test_search_messages_key_field_value_path(self) -> None:
+        """key_field='value:order_id' matches decoded value field."""
+        msgs = [
+            _make_raw_msg("orders", 0, 0, key="any"),
+            _make_raw_msg("orders", 0, 1, key="any"),
+        ]
+
+        class RegistryWithOrderId(MockSchemaRegistry):
+            _call = 0
+
+            def decode(self, raw: bytes) -> dict[str, Any] | None:
+                self.__class__._call += 1
+                if self.__class__._call == 1:
+                    return {"order_id": "ORD-999"}
+                return {"order_id": "ORD-000"}
+
+        consumer = MockConsumerWithMessages(msgs)
+        svc = _make_service(consumer, RegistryWithOrderId())
+
+        results = svc.search_messages(
+            "ORD-999", key_field="value:order_id"
+        )
+        assert len(results) == 1
+        assert results[0].value is not None
+        assert results[0].value.get("order_id") == "ORD-999"
+
+    def test_search_messages_default_window(self) -> None:
+        """time_from=None → uses earliest offset; time_to=None → uses now."""
+        msgs = [_make_raw_msg("orders", 0, 0, key="k")]
+        consumer = MockConsumerWithMessages(msgs)
+        svc = _make_service(consumer)
+
+        # No time bounds supplied — should not raise; should return match
+        results = svc.search_messages("k")
+        assert isinstance(results, list)
+
+    def test_search_messages_global_limit(self) -> None:
+        """3 matching messages but limit=2 → returns exactly 2."""
+        msgs = [
+            _make_raw_msg("orders", 0, i, key="same-key")
+            for i in range(3)
+        ]
+        consumer = MockConsumerWithMessages(msgs)
+        svc = _make_service(consumer)
+
+        results = svc.search_messages("same-key", limit=2)
+        assert len(results) == 2
+
+    def test_search_messages_decode_failure_resilient(self) -> None:
+        """Decode failure on one message → value=None retained, scan continues."""
+        msgs = [
+            _make_raw_msg("orders", 0, 0, key="k"),
+            _make_raw_msg("orders", 0, 1, key="k"),
+        ]
+
+        class PartialFailRegistry(MockSchemaRegistry):
+            _call = 0
+
+            def decode(self, raw: bytes) -> dict[str, Any] | None:
+                self.__class__._call += 1
+                if self.__class__._call == 1:
+                    raise DecodeError("orders", 0, 0, "corrupt")
+                return {}
+
+        consumer = MockConsumerWithMessages(msgs)
+        # Both messages have key="k" so both match (key-based)
+        svc = _make_service(consumer, PartialFailRegistry())
+
+        results = svc.search_messages("k")
+        # Both messages are returned — first has value=None (decode failed),
+        # second has value={} (decode succeeded)
+        assert len(results) == 2
+        assert results[0].value is None
+        assert results[1].value == {}
+
+    def test_search_messages_evidence_keys_extracted(self) -> None:
+        """Returned KafkaMessage.keys has order_id and msisdn populated."""
+        msgs = [_make_raw_msg("orders", 0, 0, key="k")]
+        registry = MockSchemaRegistry(
+            decode_result={
+                "order_id": "ORD-42",
+                "msisdn": "+79991234567",
+            }
+        )
+        consumer = MockConsumerWithMessages(msgs)
+        svc = _make_service(consumer, registry)
+
+        results = svc.search_messages("k")
+        assert len(results) == 1
+        assert results[0].keys["order_id"] == "ORD-42"
+        assert results[0].keys["msisdn"] == "+79991234567"
+
+    def test_search_messages_topics_none_scans_all(self) -> None:
+        """topics=None → calls list_topics() to discover all non-internal topics."""
+
+        class TrackingConsumer(MockConsumer):
+            def __init__(self) -> None:
+                self.list_topics_called = False
+
+            def list_topics(
+                self, include_internal: bool = False
+            ) -> list[str]:
+                self.list_topics_called = True
+                return ["orders"]
+
+            def fetch_messages(
+                self,
+                topic: str,
+                partition: int,
+                start_offset: int,
+                stop_offset: int,
+                time_to: datetime | None,
+                limit: int,
+            ) -> list[KafkaMessage]:
+                return []
+
+        consumer = TrackingConsumer()
+        svc = _make_service(consumer)
+        svc.search_messages("anything", topics=None)
+        assert consumer.list_topics_called
+
+    def test_search_messages_phase2_sc1(self) -> None:
+        """SC-1: search_messages returns list[KafkaMessage] with all fields."""
+        from datetime import timedelta
+
+        t1 = datetime.now(tz=timezone.utc) - timedelta(hours=1)
+        t2 = datetime.now(tz=timezone.utc)
+        msgs = [_make_raw_msg("orders", 0, 0, key="test")]
+        registry = MockSchemaRegistry(
+            decode_result={"field": "val"}
+        )
+        consumer = MockConsumerWithMessages(msgs)
+        svc = _make_service(consumer, registry)
+
+        results = svc.search_messages(
+            "test", time_from=t1, time_to=t2, limit=10
+        )
+        assert isinstance(results, list)
+        assert len(results) == 1
+        msg = results[0]
+        assert isinstance(msg, KafkaMessage)
+        assert msg.timestamp_utc is not None
+        assert msg.key == "test"
+        assert isinstance(msg.headers, dict)
+        assert msg.raw == b"{}"
+        # value is decoded dict
+        assert msg.value == {"field": "val"}
+        assert msg.source == "kafka"
+        assert msg.event_type == "kafka_message"

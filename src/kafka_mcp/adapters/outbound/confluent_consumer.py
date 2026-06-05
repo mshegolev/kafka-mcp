@@ -295,6 +295,45 @@ class ConfluentConsumerAdapter:
 
         return result
 
+    def offsets_for_times(
+        self,
+        topic: str,
+        partition: int,
+        timestamp_ms: int,
+    ) -> int:
+        """Return the start offset for messages at or after timestamp_ms.
+
+        Uses Consumer.offsets_for_times([TopicPartition(topic, partition,
+        timestamp_ms)]) which returns a list of TopicPartition objects with
+        .offset set to the result.  OFFSET_BEGINNING (-2) is returned when
+        timestamp_ms is before the earliest message in the partition.
+
+        Args:
+            topic: Topic name.
+            partition: Partition index (0-based).
+            timestamp_ms: POSIX millisecond timestamp to seek from.
+
+        Returns:
+            Offset of the first message at or after timestamp_ms, or -2
+            (OFFSET_BEGINNING) when before the earliest message.
+        """
+        tp = TopicPartition(topic, partition, timestamp_ms)
+        result = self._consumer.offsets_for_times(
+            [tp], timeout=_METADATA_TIMEOUT_SECONDS
+        )
+        # result is a list[TopicPartition]; the .offset is the resolved offset
+        # or OFFSET_INVALID (-1001) / OFFSET_BEGINNING (-2) when not found.
+        if result:
+            returned_offset = result[0].offset
+            # OFFSET_BEGINNING (-2) means "before first message" — return -2
+            # so the service layer uses the low watermark.
+            # OFFSET_INVALID (-1001) or negative (besides -2) means no messages
+            # at or after the requested time — treat as earliest.
+            if returned_offset == -2 or returned_offset < 0:
+                return -2
+            return returned_offset
+        return -2
+
     def fetch_message(
         self,
         topic: str,
