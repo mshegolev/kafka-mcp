@@ -21,14 +21,14 @@ from uuid import uuid4
 
 from confluent_kafka import Consumer, KafkaError, KafkaException
 
+from kafka_mcp.config import KafkaMcpSettings
+from kafka_mcp.domain.errors import TopicNotFoundError
+from kafka_mcp.ports.consumer import ConsumerPort
+
 # Synchronous broker metadata round-trips (list_topics, watermark fetch)
 # use a generous fixed budget. This is deliberately NOT poll_timeout, which
 # is reserved for actual consumer.poll() calls (WR-03).
 _METADATA_TIMEOUT_SECONDS = 10.0
-
-from kafka_mcp.config import KafkaMcpSettings
-from kafka_mcp.domain.errors import TopicNotFoundError
-from kafka_mcp.ports.consumer import ConsumerPort
 
 
 class ConfluentConsumerAdapter:
