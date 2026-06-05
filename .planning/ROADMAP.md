@@ -13,7 +13,7 @@ to exactly one phase; phases build strictly on top of each other.
 ## Phases
 
 - [x] **Phase 1: Foundation** - Hexagonal skeleton + broker/SR adapters + topic inspection tools (completed 2026-06-05)
-- [ ] **Phase 2: Search + Decode** - search_messages, get_message, Avro/Protobuf/JSON decode
+- [x] **Phase 2: Search + Decode** - search_messages, get_message, Avro/Protobuf/JSON decode (completed 2026-06-05)
 - [ ] **Phase 3: Native + Ship** - Benchmark-gated Rust scanner, all inbound faces, CI wheels, publish
 
 ---
@@ -104,7 +104,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 02-05-PLAN.md — Inbound faces: wire search_messages + get_message into MCP stdio, FastAPI REST, CLI
+- [x] 02-05-PLAN.md — Inbound faces: wire search_messages + get_message into MCP stdio, FastAPI REST, CLI
 
 ### Phase 3: Native + Ship
 
@@ -144,5 +144,5 @@ the brick is published to Glama.
 | Phase | Plans Complete | Status      | Completed |
 |-------|----------------|-------------|-----------|
 | 1. Foundation | 4/4 | Complete    | 2026-06-05 |
-| 2. Search + Decode | 4/5 | In Progress|  |
+| 2. Search + Decode | 5/5 | Complete   | 2026-06-05 |
 | 3. Native + Ship | 0/? | Not started | -      |
