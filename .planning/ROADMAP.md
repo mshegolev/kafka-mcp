@@ -100,7 +100,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 02-04-PLAN.md — Domain service + KafkaClient: search_messages, get_message, Evidence extraction, lib-layer vertical slice
+- [x] 02-04-PLAN.md — Domain service + KafkaClient: search_messages, get_message, Evidence extraction, lib-layer vertical slice
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -144,5 +144,5 @@ the brick is published to Glama.
 | Phase | Plans Complete | Status      | Completed |
 |-------|----------------|-------------|-----------|
 | 1. Foundation | 4/4 | Complete    | 2026-06-05 |
-| 2. Search + Decode | 3/5 | In Progress|  |
+| 2. Search + Decode | 4/5 | In Progress|  |
 | 3. Native + Ship | 0/? | Not started | -      |
