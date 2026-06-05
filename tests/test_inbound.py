@@ -15,7 +15,6 @@ import pytest
 from kafka_mcp.domain.errors import TopicNotFoundError
 from kafka_mcp.domain.models import PartitionInfo, TopicInfo
 
-
 # ---------------------------------------------------------------------------
 # Mock KafkaClient — no broker, deterministic data
 # ---------------------------------------------------------------------------

@@ -13,7 +13,6 @@ from kafka_mcp.domain.models import PartitionInfo, TopicInfo
 from kafka_mcp.ports.consumer import ConsumerPort
 from kafka_mcp.ports.schema_registry import SchemaRegistryPort
 
-
 # ---------------------------------------------------------------------------
 # Domain models
 # ---------------------------------------------------------------------------
