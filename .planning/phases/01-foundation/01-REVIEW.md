@@ -1,6 +1,6 @@
 ---
 phase: 01-foundation
-reviewed: 2026-06-05T00:00:00Z
+reviewed: 2026-06-05T22:10:00Z
 depth: standard
 files_reviewed: 20
 files_reviewed_list:
@@ -25,223 +25,173 @@ files_reviewed_list:
   - tests/test_inbound.py
   - pyproject.toml
 findings:
-  critical: 1
-  warning: 4
-  info: 4
-  total: 9
+  critical: 0
+  warning: 2
+  info: 3
+  total: 5
 status: issues_found
 ---
 
 # Phase 1: Code Review Report
 
-**Reviewed:** 2026-06-05
+**Reviewed:** 2026-06-05T22:10:00Z
 **Depth:** standard
-**Files Reviewed:** 20
 **Status:** issues_found
 
 ## Summary
 
-Read-only Kafka MCP brick, hexagonal layout. The core architecture is sound and
-several Phase-1 invariants verifiably hold:
+Iteration 3 (final) adversarial re-review of the read-only Kafka MCP brick. The
+iteration-2 fixes were verified directly against the source and the gates:
 
-- **Hexagonal boundary holds.** `grep` for `confluent_kafka|httpx|fastapi|mcp|uvicorn`
-  imports in `src/kafka_mcp/domain/` and `src/kafka_mcp/ports/` returns nothing.
-- **Read-only guarantee (KAFKA-06) holds structurally.** `confluent_consumer.py`
-  sets `enable.auto.commit=False`, uses a uuid4 throwaway `group.id`
-  (`kafka-mcp-ro-{uuid4}`), and contains no `subscribe()` call (test enforces this).
-- **Credential hygiene holds.** `sasl_password`/`sr_pass` are `SecretStr`; the
-  password is only materialised into a local conf dict in `__init__` and never
-  stored on an attribute or logged. `.env.example` carries no real secrets.
-- **Public-bind hardening** (commit 4479e08) is present in `server.py`.
+- **Lint gate (`ruff check src/`): GREEN** — "All checks passed!" confirmed.
+- **Test suite: GREEN** — 92 passed, 0 failed (run in an isolated venv to
+  bypass an unrelated, pre-existing `allure_pytest` plugin breakage in the
+  global interpreter; that breakage is environmental, not a defect in this code).
+- **WR-02 (consumer lifecycle):** All three entry points (`server.py` stdio,
+  REST lifespan, CLI `finally`) call `client.close()`; `KafkaClient.close()` is
+  a safe no-op for mock consumers. Sound.
+- **WR-01 (`get_partition_ids` code-based TopicNotFound mapping):** Implemented
+  with the same code-discrimination as WR-04 — only `UNKNOWN_TOPIC_OR_PART /
+  _UNKNOWN_TOPIC / _UNKNOWN_PARTITION` map to `TopicNotFoundError`; everything
+  else re-raises. All four `KafkaError` constants used were verified to exist
+  (3, -188, -190, -195). Logic is correct.
+- **WR-03 (metadata timeout):** Watermark fetch uses the dedicated 10s
+  `_METADATA_TIMEOUT_SECONDS`, not `poll_timeout`. Covered by a test.
+- **WR-04 (transient-vs-not-found boundary):** Hardened with a `_TRANSPORT`
+  regression test asserting non-not-found errors surface unchanged. Sound.
+- **Dead F401 imports (prior round, `src/`):** clean.
 
-However, the review surfaced one BLOCKER that breaks every TLS-secured production
-deployment, plus contract and robustness defects. The unit tests do **not** catch
-the BLOCKER because they exclusively use `PLAINTEXT` settings and mock the
-`Consumer` constructor, so the real librdkafka config validation never runs.
+**Core invariants — all confirmed:**
 
-These are narrative findings from direct code review. No `<structural_findings>`
-block was supplied, so there is no fallow substrate section.
+- `domain/` and `ports/` contain **zero** broker/HTTP/web-framework imports
+  (grep for `confluent_kafka|httpx|fastapi|uvicorn|requests|orjson|mcp` returns
+  nothing). Hexagonal boundary holds.
+- Read-only guarantee: `confluent_consumer.py` contains **no** `subscribe`,
+  `.commit(`, or `store_offsets`; `enable.auto.commit=False` and a throwaway
+  `kafka-mcp-ro-{uuid4}` group id are always set. Structurally read-only.
+- Credentials (`sasl_password`, `sr_pass`) are `SecretStr`;
+  `get_secret_value()` is called only inline into a local conf dict that is
+  never stored or logged. `test_secret_str_not_exposed_in_repr` guards repr.
 
-## Critical Issues
+No Critical/Blocker issues remain. Two Warnings persist: a coverage gap on the
+WR-01 fix path, and a project-wide lint failure scoped to `tests/`. Neither
+blocks shipping the read-only brick, but both are real quality defects.
 
-### CR-01: `SSL`/`SASL_SSL`-without-mechanism crashes at construction — `sasl.mechanism=None` rejected by librdkafka
+## Narrative Findings (AI reviewer)
 
-**File:** `src/kafka_mcp/adapters/outbound/confluent_consumer.py:59-69`
-**Issue:**
-The SASL branch is gated only by `if settings.security_protocol != "PLAINTEXT":`.
-This wrongly assumes every non-`PLAINTEXT` protocol uses SASL. For the common,
-valid TLS-only configuration `KAFKA_MCP_SECURITY_PROTOCOL=SSL` (no SASL), the
-SASL fields are all unset, so the code injects `sasl.mechanism=None`,
-`sasl.username=None`, `sasl.password=None` into the conf dict. librdkafka rejects
-a `None` mechanism at `Consumer()` construction:
+### Warnings
 
-```
-KafkaException: KafkaError{code=_INVALID_ARG,val=-186,
-  str="Invalid value for configuration property \"sasl.mechanisms\": (null)"}
-```
+#### WR-01: WR-01 fix path (`get_partition_ids`) has zero adapter-level test coverage
 
-The same crash occurs for `SASL_SSL`/`SASL_PLAINTEXT` whenever
-`KAFKA_MCP_SASL_MECHANISM` is not explicitly set. This means `KafkaClient.from_env()`
-— the entry point used by the CLI, REST, and MCP faces — raises an unhandled
-`KafkaException` (not a domain `ConfigError`) at startup for any TLS deployment.
-Verified by constructing a real `Consumer` with these values; it fails.
-
-The existing tests never catch this: every adapter test uses
-`_make_settings()` → `PLAINTEXT`, and patches the `Consumer` constructor with a
-`MagicMock`, so librdkafka's argument validation is never exercised.
-
-**Fix:** Only add a SASL key when its value is present, and decide SASL vs
-plain-TLS by mechanism, not by "not PLAINTEXT":
-
+**File:** `src/kafka_mcp/adapters/outbound/confluent_consumer.py:103-140`
+**Issue:** The iteration-2 WR-01 fix added the most logic-heavy new code in the
+phase — error-code discrimination on `TopicMetadata.error` that distinguishes
+genuine unknown-topic codes (→ `TopicNotFoundError`) from transient codes
+(→ re-raise `KafkaException`). This entire branch is **never exercised by any
+test against the real adapter**. `grep get_partition_ids tests/` matches only
+`test_lib.py` / `test_domain.py`, both of which use the in-memory `MockConsumer`
+whose `get_partition_ids` is a trivial dict lookup — it never touches the
+adapter's `topic_meta.error` logic. `test_adapters.py` has thorough coverage for
+`get_watermark_offsets` (the parallel WR-04 path: not-found, unknown-partition,
+transient `_TRANSPORT`) but **no equivalent for `get_partition_ids`**. The
+`metadata.topics.get(topic) is None` branch, the three not-found codes, and the
+`raise KafkaException(err)` transient branch can all silently regress.
+**Fix:** Mirror the existing `TestConfluentConsumerAdapterWatermarks` tests for
+`get_partition_ids`, driving a mocked `list_topics(topic=...)` return:
 ```python
-if settings.security_protocol != "PLAINTEXT":
-    conf["security.protocol"] = settings.security_protocol
+def test_get_partition_ids_topic_missing_raises_not_found(self) -> None:
+    from kafka_mcp.domain.errors import TopicNotFoundError
+    meta = MagicMock(); meta.topics = {}        # topic absent -> .get() is None
+    mock_consumer = MagicMock()
+    mock_consumer.list_topics.return_value = meta
+    adapter = self._make_adapter(mock_consumer)
+    with pytest.raises(TopicNotFoundError):
+        adapter.get_partition_ids("nope")
 
-# Only configure SASL when a mechanism is actually requested.
-if settings.sasl_mechanism:
-    conf["sasl.mechanism"] = settings.sasl_mechanism
-    if settings.sasl_username is not None:
-        conf["sasl.username"] = settings.sasl_username
-    if settings.sasl_password is not None:
-        conf["sasl.password"] = settings.sasl_password.get_secret_value()
+def test_get_partition_ids_transient_error_reraised(self) -> None:
+    from confluent_kafka import KafkaError, KafkaException
+    tmeta = MagicMock()
+    tmeta.error = KafkaError(KafkaError.LEADER_NOT_AVAILABLE)
+    meta = MagicMock(); meta.topics = {"t": tmeta}
+    mock_consumer = MagicMock()
+    mock_consumer.list_topics.return_value = meta
+    adapter = self._make_adapter(mock_consumer)
+    with pytest.raises(KafkaException):
+        adapter.get_partition_ids("t")
+
+def test_get_partition_ids_unknown_topic_code_raises_not_found(self) -> None:
+    from confluent_kafka import KafkaError
+    from kafka_mcp.domain.errors import TopicNotFoundError
+    tmeta = MagicMock()
+    tmeta.error = KafkaError(KafkaError.UNKNOWN_TOPIC_OR_PART)
+    meta = MagicMock(); meta.topics = {"t": tmeta}
+    mock_consumer = MagicMock()
+    mock_consumer.list_topics.return_value = meta
+    adapter = self._make_adapter(mock_consumer)
+    with pytest.raises(TopicNotFoundError):
+        adapter.get_partition_ids("t")
+
+def test_get_partition_ids_returns_sorted(self) -> None:
+    tmeta = MagicMock(); tmeta.error = None
+    tmeta.partitions = {2: MagicMock(), 0: MagicMock(), 1: MagicMock()}
+    meta = MagicMock(); meta.topics = {"t": tmeta}
+    mock_consumer = MagicMock()
+    mock_consumer.list_topics.return_value = meta
+    adapter = self._make_adapter(mock_consumer)
+    assert adapter.get_partition_ids("t") == [0, 1, 2]
 ```
 
-Add a no-broker test that uses the real `Consumer` (or asserts the conf dict
-omits `sasl.*` keys when `security_protocol="SSL"` and no mechanism is set), so
-the regression is covered without mocking away librdkafka's validation.
+#### WR-02: `ruff check tests/` fails — project-wide lint gate is red
 
-## Warnings
+**File:** `tests/test_adapters.py:13,15`, `tests/test_domain.py:7`, `tests/test_inbound.py:8`, `tests/test_lib.py:12,16`
+**Issue:** The fix loop only re-verified `ruff check src/`. The same ruff config
+(`pyproject.toml` selects `E,F,W,I,B,UP` with no `tests/` exclusion) reports
+**6 errors in `tests/`**: four `I001` (un-sorted import blocks) and two `F401`
+(`import typing` unused in `test_adapters.py:15`; `import sys` unused in
+`test_lib.py:16`). Tests are source code under this project's conventions, and
+a CI step running `ruff check` (no path argument, or `ruff check .`) will fail.
+The `F401`s in particular are the same class of dead-import defect that was
+fixed in `src/` — leaving them in `tests/` is an inconsistent application of
+that fix.
+**Fix:** Run `ruff check tests/ --fix` (all 6 are auto-fixable), then re-run
+`ruff check .` to confirm a clean tree. Verify the test suite still passes after
+removing `typing` and `sys` (both are genuinely unreferenced — `test_lib.py`
+imports `sys` but only uses `subprocess` and `pathlib`).
 
-### WR-01: Invalid `max_scan` / `poll_timeout` env vars leak raw `ValidationError`, breaking the D-04 single-exception contract
+### Info
 
-**File:** `src/kafka_mcp/config.py:38-70`
-**Issue:**
-`KafkaMcpSettings.__init__` is documented to convert pydantic field errors into
-`ConfigError` "so callers have a single domain-typed exception to handle (D-04)".
-The loop only re-raises for `err_type == "missing"` or `"value_error"`; for any
-other pydantic error type (e.g. `int_parsing` for `KAFKA_MCP_MAX_SCAN=abc`,
-`float_parsing` for `KAFKA_MCP_POLL_TIMEOUT=xyz`) it falls through and re-raises
-the raw `ValidationError`. Verified:
+#### IN-01: `describe_topic` leader is a hardcoded placeholder
 
-```
-$ KAFKA_MCP_BOOTSTRAP_SERVERS=localhost:9092 KAFKA_MCP_MAX_SCAN=notanint ...
-OTHER: ValidationError 1 validation error for KafkaMcpSettings
-max_scan: Input should be a valid integer ...
-```
+**File:** `src/kafka_mcp/domain/search_service.py:87`
+**Issue:** `PartitionInfo.leader=0` is a documented Phase-2 TODO placeholder. The
+field is exposed in REST/CLI/MCP output where a consumer could mistake `0` for a
+real leader broker id (broker 0 is a valid id). This is acknowledged and scoped
+out of Phase 1, so it is informational only.
+**Fix:** Phase 2: wire the real leader via AdminClient, or make `leader`
+`Optional[int]` defaulting to `None` so a placeholder is unambiguous.
 
-Callers that only `except ConfigError` (as the module docstring and D-04 invite
-them to) will not catch this, contradicting the stated contract.
+#### IN-02: Duplicated not-found code-discrimination logic
 
-**Fix:** Add a catch-all conversion after the typed branches, or convert every
-error type:
+**File:** `src/kafka_mcp/adapters/outbound/confluent_consumer.py:131-139` and `174-183`
+**Issue:** The three-code `UNKNOWN_TOPIC_OR_PART / _UNKNOWN_TOPIC /
+_UNKNOWN_PARTITION` membership test is copy-pasted between `get_partition_ids`
+and `get_watermark_offsets`. Acceptable for now, but the two copies can drift.
+**Fix:** Extract a module-level `_NOT_FOUND_CODES = frozenset({...})` and an
+`_is_not_found(err) -> bool` predicate used by both call sites.
 
-```python
-# After the typed checks, before re-raising:
-first = exc.errors()[0]
-loc = first.get("loc", ())
-field = f"KAFKA_MCP_{str(loc[0]).upper()}" if loc else "config"
-raise ConfigError(
-    f"{field}: {first.get('msg', str(exc))}"
-) from exc
-```
+#### IN-03: Hardcoded `timeout=10.0` magic number in `list_topics` / `get_partition_ids`
 
-### WR-02: `from_env()`-constructed consumers are never closed — librdkafka client leak
-
-**File:** `src/kafka_mcp/adapters/inbound/lib.py:35-82` (and callers
-`server.py:52,71`, `cli.py:195`)
-**Issue:**
-`ConfluentConsumerAdapter` is a context manager (`__enter__`/`__exit__` →
-`Consumer.close()`), but `KafkaClient` neither exposes `close()` nor implements
-the context-manager protocol, and it stores the adapter without ever entering it.
-Every production path — `KafkaClient.from_env()` in CLI, REST, and MCP — builds a
-real librdkafka `Consumer` (background threads, sockets, broker connection) that
-is never closed. The CLI process exits quickly so the OS reclaims it, but the
-long-lived REST and MCP servers accumulate a connected consumer per process with
-no clean shutdown, and the documented `with ConfluentConsumerAdapter(...)` cleanup
-contract is bypassed by the facade.
-
-**Fix:** Give `KafkaClient` a `close()` plus `__enter__`/`__exit__` that delegate
-to the underlying adapter, and call `Consumer.close()` on FastAPI/MCP shutdown
-(e.g. FastAPI `lifespan`/`shutdown` event) and at the end of `cli.main`.
-
-### WR-03: `describe_topic` uses `poll_timeout` as the broker watermark-request timeout
-
-**File:** `src/kafka_mcp/adapters/outbound/confluent_consumer.py:137-139`
-**Issue:**
-`get_watermark_offsets` passes `timeout=self._settings.poll_timeout` (default
-**1.0s**) to a synchronous broker round-trip, while the sibling metadata calls
-(`list_topics`, `get_partition_ids`) use a hardcoded `10.0s`. `poll_timeout` is
-semantically the `consumer.poll()` timeout (per its docstring/`.env.example`),
-not a metadata-fetch budget. Under broker latency or a topic with many
-partitions, a 1.0s budget can spuriously raise `KafkaException` → which this
-method then mistranslates into `TopicNotFoundError` (see WR-04), reporting an
-existing topic as missing.
-
-**Fix:** Use a dedicated, larger metadata timeout (or the same 10.0s used by the
-other metadata calls) here, and reserve `poll_timeout` for actual `poll()` calls
-introduced in Phase 2.
-
-### WR-04: `get_watermark_offsets` collapses all `KafkaException`s into `TopicNotFoundError`
-
-**File:** `src/kafka_mcp/adapters/outbound/confluent_consumer.py:140-141`
-**Issue:**
-`except KafkaException` unconditionally re-raises as `TopicNotFoundError(topic)`.
-`KafkaException` also covers transient/operational failures — request timeout
-(see WR-03), broker unavailable, transport errors, authorization failures. Those
-will be surfaced to the caller (and to the REST face as an HTTP **404**, per
-`rest_api.py:99-103`) as "topic not found", which is incorrect and misleading
-during an incident: a broker outage looks like a missing topic.
-
-**Fix:** Inspect `exc.args[0].code()` and only map the genuine
-`UNKNOWN_TOPIC_OR_PART` / unknown-partition codes to `TopicNotFoundError`;
-re-raise other `KafkaException`s unchanged (or wrap in a distinct operational
-error type).
-
-## Info
-
-### IN-01: Unused `httpx` import in the Phase-1 stub
-
-**File:** `src/kafka_mcp/adapters/outbound/schema_registry_http.py:14`
-**Issue:** `import httpx` is present but `httpx` is referenced only inside
-docstrings and commented-out Phase-2 code. This is a live unused import
-(ruff `F401`, which is in the configured lint `select`).
-**Fix:** Remove the import until Phase 2 wires the real HTTP call, or guard it
-with the commented block.
-
-### IN-02: `orjson_dumps`/`orjson_loads` type hints disagree with actual usage
-
-**File:** `src/kafka_mcp/adapters/outbound/json_orjson.py:21,36`
-**Issue:** `orjson_dumps(obj: dict) -> bytes` is annotated to accept a `dict`,
-but `cli.py:126` calls `orjson_dumps(topics)` with a `list[str]`. Likewise
-`orjson_loads(...) -> dict` will return a `list`/scalar for non-object JSON.
-Runtime is fine (orjson serialises lists), but the annotations are wrong and a
-type checker would flag the `list` argument.
-**Fix:** Widen to `obj: Any` / `-> Any` (or `dict | list`) to match real usage.
-
-### IN-03: `_consumer` stored on both `KafkaClient` and `TopicService`
-
-**File:** `src/kafka_mcp/adapters/inbound/lib.py:59-60`
-**Issue:** `KafkaClient.__init__` stores `self._consumer = consumer` and then
-also constructs `TopicService(consumer)`, which stores its own `self._consumer`.
-`KafkaClient._consumer` is never read anywhere (the facade delegates exclusively
-to `self._service`). Dead state that invites confusion about which reference
-owns the consumer lifecycle (relevant to WR-02).
-**Fix:** Drop `self._consumer` from `KafkaClient`, or keep only the one needed
-to implement `close()` (WR-02).
-
-### IN-04: Placeholder `leader=0` is indistinguishable from a real broker id 0
-
-**File:** `src/kafka_mcp/domain/search_service.py:88`
-**Issue:** `PartitionInfo.leader` is hardcoded to `0` as a Phase-2 placeholder,
-but broker id `0` is a valid, common leader id. A consumer of `describe_topic`
-output cannot tell "leader unknown" from "leader is broker 0". The CLI prints it
-in the `Leader` column as if authoritative.
-**Fix:** Make `leader` `int | None` and use `None` for the placeholder (or
-`-1`), so downstream cannot mistake it for a real leader. Tracked TODO already
-references Phase 2 AdminClient wiring.
+**File:** `src/kafka_mcp/adapters/outbound/confluent_consumer.py:97,119`
+**Issue:** `list_topics` and `get_partition_ids` pass a literal `timeout=10.0`
+while `get_watermark_offsets` correctly uses the named
+`_METADATA_TIMEOUT_SECONDS = 10.0` constant. The literal and the constant are
+the same value today but are not linked; a future tuning of the constant would
+silently miss two of the three metadata round-trips.
+**Fix:** Replace the two `timeout=10.0` literals with
+`timeout=_METADATA_TIMEOUT_SECONDS`.
 
 ---
 
-_Reviewed: 2026-06-05_
+_Reviewed: 2026-06-05T22:10:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
