@@ -66,8 +66,19 @@ class KafkaMcpSettings(BaseSettings):
                     msg = msg.removeprefix("Value error, ")
                     raise ConfigError(msg) from exc
 
-            # No recognised error type — re-raise ValidationError as-is
-            raise
+            # Catch-all: any other pydantic error type (int_parsing,
+            # float_parsing, etc.) must still surface as a domain ConfigError
+            # so callers have a single domain-typed exception to handle
+            # (D-04). Without this, e.g. KAFKA_MCP_MAX_SCAN=abc leaked a raw
+            # ValidationError, contradicting the single-exception contract.
+            first = exc.errors()[0]
+            loc = first.get("loc", ())
+            field = (
+                f"KAFKA_MCP_{str(loc[0]).upper()}" if loc else "config"
+            )
+            raise ConfigError(
+                f"{field}: {first.get('msg', str(exc))}"
+            ) from exc
 
     model_config = SettingsConfigDict(
         env_prefix="KAFKA_MCP_",

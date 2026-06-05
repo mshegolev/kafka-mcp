@@ -181,6 +181,49 @@ class TestKafkaClient:
             KafkaClient.from_env()
 
 
+class TestConfigErrorContract:
+    """WR-01: every invalid env var surfaces as ConfigError (D-04).
+
+    Before the fix, pydantic error types other than ``missing`` /
+    ``value_error`` (e.g. ``int_parsing``, ``float_parsing``) leaked a raw
+    ``ValidationError``, breaking the single-exception contract.
+    """
+
+    def test_invalid_max_scan_raises_config_error(self) -> None:
+        from kafka_mcp.config import KafkaMcpSettings
+
+        with pytest.raises(ConfigError) as exc_info:
+            KafkaMcpSettings(
+                bootstrap_servers="localhost:9092", max_scan="notanint"
+            )
+        assert "MAX_SCAN" in str(exc_info.value)
+
+    def test_invalid_poll_timeout_raises_config_error(self) -> None:
+        from kafka_mcp.config import KafkaMcpSettings
+
+        with pytest.raises(ConfigError) as exc_info:
+            KafkaMcpSettings(
+                bootstrap_servers="localhost:9092", poll_timeout="xyz"
+            )
+        assert "POLL_TIMEOUT" in str(exc_info.value)
+
+    def test_invalid_max_scan_not_raw_validation_error(self) -> None:
+        """The leaked pydantic ValidationError must be fully converted."""
+        from pydantic import ValidationError
+
+        from kafka_mcp.config import KafkaMcpSettings
+
+        with pytest.raises(ConfigError):
+            try:
+                KafkaMcpSettings(
+                    bootstrap_servers="localhost:9092", max_scan="abc"
+                )
+            except ValidationError:  # pragma: no cover - regression guard
+                pytest.fail(
+                    "raw ValidationError leaked instead of ConfigError"
+                )
+
+
 # ---------------------------------------------------------------------------
 # Phase 1 success criterion tests
 # ---------------------------------------------------------------------------
