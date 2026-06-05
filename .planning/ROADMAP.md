@@ -126,6 +126,6 @@ the brick is published to Glama.
 
 | Phase | Plans Complete | Status      | Completed |
 |-------|----------------|-------------|-----------|
-| 1. Foundation | 4/4 | Complete   | 2026-06-05 |
+| 1. Foundation | 4/4 | Complete    | 2026-06-05 |
 | 2. Search + Decode | 0/? | Not started | -    |
 | 3. Native + Ship | 0/? | Not started | -      |
