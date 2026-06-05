@@ -30,7 +30,13 @@ class SchemaRegistryPort(Protocol):
         """
         ...
 
-    def decode(self, raw: bytes) -> dict[str, Any] | None:
+    def decode(
+        self,
+        raw: bytes,
+        topic: str = "",
+        partition: int = 0,
+        offset: int = 0,
+    ) -> dict[str, Any] | None:
         """Decode a raw wire-format message payload to a plain dict.
 
         Returns None when the payload cannot be decoded (resilient path
@@ -40,8 +46,17 @@ class SchemaRegistryPort(Protocol):
         Confluent magic-byte framing (0x00 + 4-byte schema_id) is handled
         in the implementation; json.loads fallback when framing is absent.
 
+        The optional ``topic``/``partition``/``offset`` parameters carry the
+        message coordinates so a raised :class:`DecodeError` reports the real
+        location instead of a placeholder ``[0]@0`` (WR-01/CR-02). Callers on
+        the strict ``get_message`` path SHOULD pass them; the search path may
+        omit them since it swallows DecodeError.
+
         Args:
             raw: Raw bytes from the Kafka message value field.
+            topic: Topic name (for DecodeError context).
+            partition: Partition index (for DecodeError context).
+            offset: Message offset (for DecodeError context).
 
         Returns:
             Decoded dict, or None if decoding is not possible.

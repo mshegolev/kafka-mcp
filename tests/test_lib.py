@@ -159,9 +159,22 @@ class MockSchemaRegistry:
     def get_schema(self, subject: str) -> dict | None:
         return None
 
-    def decode(self, raw: bytes) -> dict[str, Any] | None:
+    def decode(
+        self,
+        raw: bytes,
+        topic: str = "",
+        partition: int = 0,
+        offset: int = 0,
+    ) -> dict[str, Any] | None:
         if self._raise_decode_error:
-            raise DecodeError(self._decode_topic, 0, 0, "mock decode failure")
+            # Echo the coordinates the caller actually passed so call sites
+            # that forward topic/partition/offset can be verified (IN-04).
+            raise DecodeError(
+                topic or self._decode_topic,
+                partition,
+                offset,
+                "mock decode failure",
+            )
         return self._decode_result
 
 
@@ -531,7 +544,13 @@ class TestTopicServiceSearchMessages:
         class RegistryWithOrderId(MockSchemaRegistry):
             _call = 0
 
-            def decode(self, raw: bytes) -> dict[str, Any] | None:
+            def decode(
+                self,
+                raw: bytes,
+                topic: str = "",
+                partition: int = 0,
+                offset: int = 0,
+            ) -> dict[str, Any] | None:
                 self.__class__._call += 1
                 if self.__class__._call == 1:
                     return {"order_id": "ORD-999"}
@@ -579,7 +598,13 @@ class TestTopicServiceSearchMessages:
         class PartialFailRegistry(MockSchemaRegistry):
             _call = 0
 
-            def decode(self, raw: bytes) -> dict[str, Any] | None:
+            def decode(
+                self,
+                raw: bytes,
+                topic: str = "",
+                partition: int = 0,
+                offset: int = 0,
+            ) -> dict[str, Any] | None:
                 self.__class__._call += 1
                 if self.__class__._call == 1:
                     raise DecodeError("orders", 0, 0, "corrupt")

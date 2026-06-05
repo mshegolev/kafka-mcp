@@ -146,7 +146,13 @@ class TestSchemaRegistryPort:
             def get_schema(self, subject: str) -> dict | None:
                 return None
 
-            def decode(self, raw: bytes) -> dict | None:
+            def decode(
+                self,
+                raw: bytes,
+                topic: str = "",
+                partition: int = 0,
+                offset: int = 0,
+            ) -> dict | None:
                 return None
 
         assert isinstance(MockRegistry(), SchemaRegistryPort)
@@ -440,7 +446,13 @@ class MockSchemaRegistry:
     def get_schema(self, subject: str) -> dict | None:
         return None
 
-    def decode(self, raw: bytes) -> dict | None:
+    def decode(
+        self,
+        raw: bytes,
+        topic: str = "",
+        partition: int = 0,
+        offset: int = 0,
+    ) -> dict | None:
         return None
 
 

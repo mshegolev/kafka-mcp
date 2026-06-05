@@ -56,7 +56,13 @@ class _NullSchemaRegistry:
     def get_schema(self, subject: str) -> dict | None:
         return None
 
-    def decode(self, raw: bytes) -> dict[str, Any] | None:
+    def decode(
+        self,
+        raw: bytes,
+        topic: str = "",
+        partition: int = 0,
+        offset: int = 0,
+    ) -> dict[str, Any] | None:
         return None
 
 
