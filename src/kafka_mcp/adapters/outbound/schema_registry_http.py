@@ -322,19 +322,28 @@ class SchemaRegistryHttpAdapter:
 
     def _decode_json(
         self, raw: bytes, topic: str, partition: int, offset: int
-    ) -> dict:
-        """Attempt JSON decode of raw bytes (no Confluent framing)."""
+    ) -> dict | None:
+        """Attempt JSON decode of raw bytes (no Confluent framing).
+
+        WR-04: when ``json.loads`` yields a non-object (list/int/str/bool/null),
+        we return ``None`` rather than fabricating a synthetic ``{"value": ...}``
+        envelope. The payload had no object body to decode, and ``raw`` remains
+        the source of truth — wrapping it would inject a key that never existed
+        in the message and would mislead ``value:<path>`` matching and Evidence
+        extraction.
+        """
         try:
             result = json.loads(raw)
-            if isinstance(result, dict):
-                return result
-            # json.loads can return a list, int, str, etc. — wrap in a container
-            return {"value": result}
         except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as exc:
             raise DecodeError(
                 topic, partition, offset,
                 reason=f"json decode failed: {exc}",
             ) from exc
+        if isinstance(result, dict):
+            return result
+        # Non-object JSON (list/int/str/bool/null): no object body to decode.
+        # Return None; raw stays the source of truth (no synthetic envelope).
+        return None
 
     # ------------------------------------------------------------------ #
     # SchemaRegistryPort — get_schema (backward compatibility)             #

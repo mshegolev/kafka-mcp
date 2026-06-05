@@ -708,6 +708,16 @@ class TestSchemaRegistryDecodeJson:
         result = adapter.decode(raw)
         assert result == {"key": "val"}
 
+    def test_decode_json_fallback_non_object_returns_none(self) -> None:
+        """WR-04: non-object JSON (list/scalar) → None, not a {"value": ...} wrapper."""
+        with patch(_ADAPTER_MOD + ".SchemaRegistryClient"):
+            adapter = _make_sr_adapter()
+        # A JSON array payload has no object body to decode.
+        assert adapter.decode(b"[1, 2, 3]") is None
+        # A bare JSON scalar likewise yields no decoded object.
+        assert adapter.decode(b"42") is None
+        assert adapter.decode(b'"hello"') is None
+
     def test_decode_json_fallback_invalid(self) -> None:
         """Non-JSON, non-magic-byte payload → raises DecodeError with 'json' in reason."""
         from kafka_mcp.domain.errors import DecodeError
