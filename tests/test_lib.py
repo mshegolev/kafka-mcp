@@ -670,3 +670,171 @@ class TestTopicServiceSearchMessages:
         assert msg.value == {"field": "val"}
         assert msg.source == "kafka"
         assert msg.event_type == "kafka_message"
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 Task 2: TopicService.get_message + KafkaClient wiring RED tests
+# ---------------------------------------------------------------------------
+
+
+class MockConsumerWithMessage(MockConsumer):
+    """MockConsumer that returns a single specific message for fetch_message."""
+
+    def __init__(
+        self,
+        message: KafkaMessage | None = None,
+        raise_not_found: bool = False,
+    ) -> None:
+        self._message = message
+        self._raise_not_found = raise_not_found
+
+    def fetch_message(
+        self, topic: str, partition: int, offset: int
+    ) -> KafkaMessage:
+        if self._raise_not_found:
+            raise MessageNotFoundError(topic, partition, offset)
+        if self._message is None:
+            raise MessageNotFoundError(topic, partition, offset)
+        return self._message
+
+
+class TestTopicServiceGetMessage:
+    """Phase 2 RED tests for TopicService.get_message."""
+
+    def test_get_message_returns_decoded_kafka_message(self) -> None:
+        """Mock consumer returns raw; mock registry decodes → decoded value."""
+        raw = _make_raw_msg("orders", 0, 42, key="k", raw=b'{"x": 1}')
+        consumer = MockConsumerWithMessage(message=raw)
+        registry = MockSchemaRegistry(decode_result={"x": 1})
+        svc = _make_service(consumer, registry)
+
+        result = svc.get_message("orders", 0, 42)
+        assert isinstance(result, KafkaMessage)
+        assert result.value == {"x": 1}
+
+    def test_get_message_decode_error_propagated(self) -> None:
+        """DecodeError from registry.decode() propagates (strict single-msg path)."""
+        raw = _make_raw_msg("orders", 0, 42)
+        consumer = MockConsumerWithMessage(message=raw)
+        registry = MockSchemaRegistry(raise_decode_error=True, decode_topic="orders")
+        svc = _make_service(consumer, registry)
+
+        with pytest.raises(DecodeError):
+            svc.get_message("orders", 0, 42)
+
+    def test_get_message_not_found_propagated(self) -> None:
+        """MessageNotFoundError from consumer propagates to caller."""
+        consumer = MockConsumerWithMessage(raise_not_found=True)
+        svc = _make_service(consumer)
+
+        with pytest.raises(MessageNotFoundError):
+            svc.get_message("orders", 0, 9999)
+
+    def test_get_message_value_decoded(self) -> None:
+        """Returned KafkaMessage.value is dict (not None) when decode succeeds."""
+        raw = _make_raw_msg("payments", 1, 7)
+        consumer = MockConsumerWithMessage(message=raw)
+        registry = MockSchemaRegistry(decode_result={"amount": 100})
+        svc = _make_service(consumer, registry)
+
+        result = svc.get_message("payments", 1, 7)
+        assert result.value is not None
+        assert result.value == {"amount": 100}
+
+
+class TestKafkaClientPhase2:
+    """Phase 2 RED tests for KafkaClient search/get delegation."""
+
+    def test_kafka_client_search_messages_delegates(self) -> None:
+        """KafkaClient.search_messages delegates to TopicService.search_messages."""
+        from kafka_mcp.adapters.inbound.lib import KafkaClient
+
+        msgs = [_make_raw_msg("orders", 0, 0, key="target")]
+        consumer = MockConsumerWithMessages(msgs)
+        registry = MockSchemaRegistry()
+        client = KafkaClient(consumer, registry)
+
+        results = client.search_messages("target")
+        assert isinstance(results, list)
+        assert len(results) == 1
+        assert results[0].key == "target"
+
+    def test_kafka_client_get_message_delegates(self) -> None:
+        """KafkaClient.get_message delegates to TopicService.get_message."""
+        from kafka_mcp.adapters.inbound.lib import KafkaClient
+
+        raw = _make_raw_msg("orders", 0, 5, key="k")
+        consumer = MockConsumerWithMessage(message=raw)
+        registry = MockSchemaRegistry(decode_result={"field": "v"})
+        client = KafkaClient(consumer, registry)
+
+        result = client.get_message("orders", 0, 5)
+        assert isinstance(result, KafkaMessage)
+        assert result.value == {"field": "v"}
+
+    def test_phase2_sc2(self) -> None:
+        """SC-2: get_message returns KafkaMessage with decoded value."""
+        from kafka_mcp.adapters.inbound.lib import KafkaClient
+
+        raw = _make_raw_msg("payments", 0, 100)
+        consumer = MockConsumerWithMessage(message=raw)
+        registry = MockSchemaRegistry(decode_result={"order_id": "X"})
+        client = KafkaClient(consumer, registry)
+
+        result = client.get_message("payments", 0, 100)
+        assert isinstance(result, KafkaMessage)
+        assert result.value is not None
+        assert result.source == "kafka"
+        assert result.event_type == "kafka_message"
+
+    def test_phase2_sc3_resilient_search_and_strict_get(self) -> None:
+        """SC-3: corrupt record in search → value=None; in get → DecodeError raised."""
+        from kafka_mcp.adapters.inbound.lib import KafkaClient
+
+        # Search (resilient): corrupt decode → value=None, message retained
+        msgs = [_make_raw_msg("orders", 0, 0, key="k")]
+        consumer_search = MockConsumerWithMessages(msgs)
+        registry_fail = MockSchemaRegistry(
+            raise_decode_error=True, decode_topic="orders"
+        )
+        client_search = KafkaClient(consumer_search, registry_fail)
+        results = client_search.search_messages("k")
+        assert len(results) == 1
+        assert results[0].value is None
+
+        # get_message (strict): DecodeError propagates
+        raw = _make_raw_msg("orders", 0, 0)
+        consumer_get = MockConsumerWithMessage(message=raw)
+        client_get = KafkaClient(consumer_get, registry_fail)
+        with pytest.raises(DecodeError):
+            client_get.get_message("orders", 0, 0)
+
+    def test_phase2_sc4_evidence_contract(self) -> None:
+        """SC-4: returned KafkaMessage has source/event_type/keys fields."""
+        from kafka_mcp.adapters.inbound.lib import KafkaClient
+
+        msgs = [
+            _make_raw_msg(
+                "orders", 0, 0, key="k",
+                headers={"msisdn": "+79990001122"},
+            )
+        ]
+        consumer = MockConsumerWithMessages(msgs)
+        registry = MockSchemaRegistry(
+            decode_result={"order_id": "ORD-1", "customer_id": "CID-2"}
+        )
+        client = KafkaClient(consumer, registry)
+
+        results = client.search_messages("k")
+        assert len(results) == 1
+        msg = results[0]
+        assert msg.source == "kafka"
+        assert msg.event_type == "kafka_message"
+        assert isinstance(msg.keys, dict)
+        assert "order_id" in msg.keys
+        assert "msisdn" in msg.keys
+        assert "customer_id" in msg.keys
+        assert "product_id" in msg.keys
+        assert msg.keys["order_id"] == "ORD-1"
+        assert msg.keys["customer_id"] == "CID-2"
+        assert msg.keys["msisdn"] == "+79990001122"
