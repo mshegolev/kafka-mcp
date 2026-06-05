@@ -12,6 +12,7 @@ Covers:
 
 from __future__ import annotations
 
+import shutil
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -786,24 +787,104 @@ class TestSchemaRegistryDecodeAvro:
         assert mock_client.get_schema.call_count == 1
 
 
+def _build_protobuf_payload(
+    proto_src: str, message_name: str, fields: dict, schema_id: int = 123
+) -> bytes:
+    """Compile ``proto_src`` with protoc, serialize a message, and wrap it in
+    Confluent Protobuf framing (magic + schema_id + 0x00 index + payload).
+
+    This produces a REAL wire payload (no mocks) so the generic decode path is
+    exercised end-to-end (CR-01).
+    """
+    import os
+    import subprocess
+    import tempfile
+
+    from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
+
+    with tempfile.TemporaryDirectory() as td:
+        pp = os.path.join(td, "s.proto")
+        op = os.path.join(td, "s.desc")
+        with open(pp, "w", encoding="utf-8") as fh:
+            fh.write(proto_src)
+        subprocess.run(
+            [
+                "protoc",
+                f"--proto_path={td}",
+                f"--descriptor_set_out={op}",
+                "--include_imports",
+                pp,
+            ],
+            check=True,
+            capture_output=True,
+        )
+        fds = descriptor_pb2.FileDescriptorSet()
+        with open(op, "rb") as fh:
+            fds.ParseFromString(fh.read())
+    pool = descriptor_pool.DescriptorPool()
+    fd = None
+    for f in fds.file:
+        fd = pool.Add(f)
+    desc = fd.message_types_by_name[message_name]
+    msg_cls = message_factory.GetMessageClass(desc)
+    msg = msg_cls()
+    for k, v in fields.items():
+        setattr(msg, k, v)
+    payload = msg.SerializeToString()
+    # magic(1) + schema_id(4, big-endian) + index header 0x00 + payload
+    return b"\x00" + schema_id.to_bytes(4, "big") + b"\x00" + payload
+
+
+@pytest.mark.skipif(
+    shutil.which("protoc") is None,
+    reason="protoc binary required for generic protobuf decode",
+)
 class TestSchemaRegistryDecodeProtobuf:
-    """Confluent-framed Protobuf payloads decoded via mocked ProtobufDeserializer."""
+    """Confluent-framed Protobuf payloads decoded via real protoc compilation."""
 
-    def test_decode_magic_byte_protobuf(self) -> None:
-        """Confluent-framed PROTOBUF payload → calls ProtobufDeserializer and returns dict."""
-        mock_schema = _mock_schema("PROTOBUF")
+    _PROTO_SRC = (
+        "syntax = \"proto3\";\n"
+        "message Person { string msisdn = 1; int32 age = 2; }\n"
+    )
+
+    def test_protobuf_construction_does_not_raise_attributeerror(self) -> None:
+        """CR-01: the decode path must not raise AttributeError at construction.
+
+        The old code constructed ``ProtobufDeserializer(None, ...)`` which
+        dereferenced ``None.DESCRIPTOR`` and raised AttributeError for EVERY
+        protobuf payload. This asserts that path is gone: a real payload now
+        decodes without any AttributeError.
+        """
+        raw = _build_protobuf_payload(
+            self._PROTO_SRC, "Person", {"msisdn": "79001234567", "age": 7}
+        )
+        schema = _mock_schema("PROTOBUF", schema_str=self._PROTO_SRC)
         mock_client = MagicMock()
-        mock_client.get_schema.return_value = mock_schema
-        mock_deserializer = MagicMock(return_value={"msisdn": "79001234567"})
+        mock_client.get_schema.return_value = schema
 
-        with (
-            patch(_ADAPTER_MOD + ".SchemaRegistryClient", return_value=mock_client),
-            patch(_ADAPTER_MOD + ".ProtobufDeserializer", return_value=mock_deserializer),
+        with patch(
+            _ADAPTER_MOD + ".SchemaRegistryClient", return_value=mock_client
         ):
             adapter = _make_sr_adapter()
-            raw = _CONFLUENT_PREFIX + b"\x02" * 10
+            # Must NOT raise AttributeError (the CR-01 defect).
+            result = adapter.decode(raw, topic="people", partition=0, offset=0)
+        assert isinstance(result, dict)
+
+    def test_decode_magic_byte_protobuf_roundtrip(self) -> None:
+        """Real Confluent-framed PROTOBUF payload → generic decode to dict."""
+        raw = _build_protobuf_payload(
+            self._PROTO_SRC, "Person", {"msisdn": "79001234567", "age": 42}
+        )
+        schema = _mock_schema("PROTOBUF", schema_str=self._PROTO_SRC)
+        mock_client = MagicMock()
+        mock_client.get_schema.return_value = schema
+
+        with patch(
+            _ADAPTER_MOD + ".SchemaRegistryClient", return_value=mock_client
+        ):
+            adapter = _make_sr_adapter()
             result = adapter.decode(raw)
-        assert result == {"msisdn": "79001234567"}
+        assert result == {"msisdn": "79001234567", "age": 42}
 
     def test_decode_unknown_schema_type(self) -> None:
         """Schema type other than AVRO/PROTOBUF → DecodeError with 'unknown schema type'."""

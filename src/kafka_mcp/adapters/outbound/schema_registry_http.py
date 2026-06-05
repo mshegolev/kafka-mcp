@@ -5,6 +5,20 @@ Wire-format detection:
   - No magic byte → json.loads fallback
   - Failure → typed DecodeError (never an unhandled exception)
 
+Protobuf decode (generic, no pre-compiled classes):
+  - The Confluent Protobuf framing is magic(1) + schema_id(4) + a message-index
+    header (a varint count followed by that many varint indices; a single 0x00
+    byte is the common "first message" shorthand) followed by the serialized
+    message bytes.
+  - The registered ``.proto`` source (``schema.schema_str``) is compiled to a
+    ``FileDescriptorSet`` at decode time via the ``protoc`` binary, loaded into
+    a private ``DescriptorPool``, and the concrete message type selected by the
+    message-index path. The message is then parsed and rendered to a plain dict
+    via ``MessageToDict``.
+  - If ``protoc`` is unavailable, or the message-index path cannot be resolved,
+    a typed ``DecodeError`` is raised (never an unhandled exception). See
+    ``_decode_protobuf`` for the precise limitation notes.
+
 Security (T-02-02-B):
   - sr_pass is passed directly to SchemaRegistryClient conf dict; NOT stored as attribute
   - default object repr shows no attribute values (plain class, not dataclass/pydantic)
@@ -17,10 +31,13 @@ Hexagonal boundary:
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import subprocess
+import tempfile
 
 from confluent_kafka.schema_registry import Schema, SchemaRegistryClient
 from confluent_kafka.schema_registry.avro import AvroDeserializer
-from confluent_kafka.schema_registry.protobuf import ProtobufDeserializer
 
 from kafka_mcp.domain.errors import DecodeError
 
@@ -80,6 +97,9 @@ class SchemaRegistryHttpAdapter:
         # Prevents repeated SR round-trips for the same schema_id within
         # the adapter's lifetime (separate from SR client's own cache).
         self._schema_cache: dict[int, Schema] = {}
+        # Compiled Protobuf FileDescriptor cache keyed by raw schema_str, so a
+        # given .proto is compiled via protoc at most once per adapter lifetime.
+        self._proto_descriptor_cache: dict[str, object] = {}
 
     # ------------------------------------------------------------------ #
     # SchemaRegistryPort — decode                                          #
@@ -192,33 +212,42 @@ class SchemaRegistryHttpAdapter:
         partition: int,
         offset: int,
     ) -> dict:
-        """Decode Confluent-framed Protobuf bytes to dict.
+        """Decode Confluent-framed Protobuf bytes to a plain dict (generic).
 
-        Without pre-generated message classes we cannot fully decode arbitrary
-        Protobuf payloads.  ProtobufDeserializer requires a concrete message type
-        (generated class) at construction time, which we don't have for generic
-        decode.
+        Generic decode without pre-compiled message classes:
+          1. Skip the framing header (magic + schema_id), then read the
+             Protobuf message-index header (varint count + that many varint
+             indices; a single 0x00 byte is the "first message" shorthand).
+          2. Compile ``schema.schema_str`` (the registered ``.proto`` source)
+             to a ``FileDescriptorSet`` via the ``protoc`` binary, load it into
+             a private ``DescriptorPool``, and resolve the concrete message
+             type by walking the message-index path over the file's top-level
+             message types.
+          3. Build a dynamic message class via ``message_factory``, parse the
+             remaining bytes, and render to a dict via ``MessageToDict``.
 
-        TODO (Phase 3): Support pre-generated Protobuf message types via a
-        configurable message-type registry so specific schemas can be decoded
-        without resorting to dynamic class resolution.
-
-        For now we raise DecodeError with an actionable reason rather than
-        silently executing unknown dynamic code (T-02-02-D).
+        Limitation: requires a ``protoc`` binary on PATH. When it is absent (or
+        the schema references imports we cannot resolve), a typed DecodeError is
+        raised — never an unhandled exception (T-02-02-D). Pre-compiled message
+        types are NOT required.
         """
         try:
-            # ProtobufDeserializer requires a concrete message_type class.
-            # We use None as a sentinel to trigger the proper error path
-            # and wrap it as DecodeError.
-            deserializer = ProtobufDeserializer(None, {"use.deprecated.format": False})
-            result = deserializer(raw, ctx=None)
-            # If somehow it succeeds, convert to dict via json_format
-            if hasattr(result, "DESCRIPTOR"):
-                from google.protobuf.json_format import MessageToDict
-                return MessageToDict(result)
-            if isinstance(result, dict):
-                return result
-            return dict(result)
+            index_path, payload = _strip_protobuf_index_header(
+                raw[_FRAMING_HEADER_LEN:]
+            )
+            file_descriptor = self._compile_proto_descriptor(schema)
+            message_descriptor = _resolve_message_by_index(
+                file_descriptor, index_path
+            )
+
+            from google.protobuf import message_factory
+
+            message = message_factory.GetMessageClass(message_descriptor)()
+            message.ParseFromString(payload)
+
+            from google.protobuf.json_format import MessageToDict
+
+            return MessageToDict(message)
         except DecodeError:
             raise
         except Exception as exc:
@@ -226,6 +255,70 @@ class SchemaRegistryHttpAdapter:
                 topic, partition, offset,
                 reason=f"protobuf decode failed: {exc}",
             ) from exc
+
+    def _compile_proto_descriptor(self, schema: Schema):
+        """Compile a registered ``.proto`` schema to a FileDescriptor.
+
+        Uses the ``protoc`` binary to emit a FileDescriptorSet, then loads it
+        into this adapter's private DescriptorPool (cached per schema_str so a
+        given schema is compiled at most once per adapter lifetime).
+
+        Raises:
+            DecodeError-friendly RuntimeError on failure (the caller wraps it).
+        """
+        schema_str = schema.schema_str or ""
+        cached = self._proto_descriptor_cache.get(schema_str)
+        if cached is not None:
+            return cached
+
+        protoc = shutil.which("protoc")
+        if protoc is None:
+            raise RuntimeError(
+                "protoc binary not found on PATH; generic protobuf decode "
+                "requires protoc to compile the registered .proto schema"
+            )
+
+        from google.protobuf import descriptor_pb2, descriptor_pool
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            proto_path = os.path.join(tmpdir, "schema.proto")
+            out_path = os.path.join(tmpdir, "schema.desc")
+            with open(proto_path, "w", encoding="utf-8") as fh:
+                fh.write(schema_str)
+
+            completed = subprocess.run(
+                [
+                    protoc,
+                    f"--proto_path={tmpdir}",
+                    f"--descriptor_set_out={out_path}",
+                    "--include_imports",
+                    proto_path,
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if completed.returncode != 0:
+                raise RuntimeError(
+                    f"protoc failed: {completed.stderr.strip()}"
+                )
+
+            with open(out_path, "rb") as fh:
+                fds = descriptor_pb2.FileDescriptorSet()
+                fds.ParseFromString(fh.read())
+
+        # Use a fresh pool per schema to avoid duplicate-symbol collisions
+        # across different schemas registered under different ids.
+        pool = descriptor_pool.DescriptorPool()
+        file_descriptor = None
+        for file_proto in fds.file:
+            file_descriptor = pool.Add(file_proto)
+
+        if file_descriptor is None:
+            raise RuntimeError("protoc produced an empty descriptor set")
+
+        self._proto_descriptor_cache[schema_str] = file_descriptor
+        return file_descriptor
 
     def _decode_json(
         self, raw: bytes, topic: str, partition: int, offset: int
@@ -261,3 +354,85 @@ class SchemaRegistryHttpAdapter:
             ``None`` always (schema_id-based lookup used by decode()).
         """
         return None
+
+
+# ---------------------------------------------------------------------------- #
+# Protobuf framing helpers (module-level, pure)                                 #
+# ---------------------------------------------------------------------------- #
+
+
+def _read_varint(buf: bytes, pos: int) -> tuple[int, int]:
+    """Read a base-128 varint from ``buf`` starting at ``pos``.
+
+    Returns ``(value, new_pos)``. Raises ValueError if the buffer ends mid
+    varint (truncated/corrupt framing).
+    """
+    result = 0
+    shift = 0
+    while True:
+        if pos >= len(buf):
+            raise ValueError("truncated varint in protobuf message-index header")
+        byte = buf[pos]
+        pos += 1
+        result |= (byte & 0x7F) << shift
+        if (byte & 0x80) == 0:
+            break
+        shift += 7
+    return result, pos
+
+
+def _strip_protobuf_index_header(buf: bytes) -> tuple[list[int], bytes]:
+    """Strip the Confluent Protobuf message-index header.
+
+    ``buf`` is the payload AFTER the magic+schema_id framing. The header is a
+    varint ``count`` followed by ``count`` varint indices; a single ``0x00``
+    byte is the common shorthand for "the first message type" (an empty index
+    path == ``[0]``).
+
+    Returns ``(index_path, remaining_payload)`` where ``index_path`` is the
+    list of message indices to walk (defaulting to ``[0]`` for the shorthand).
+    """
+    if not buf:
+        return [0], b""
+
+    # Shorthand: a single 0x00 means count==0 → first message type.
+    count, pos = _read_varint(buf, 0)
+    if count == 0:
+        return [0], buf[pos:]
+
+    index_path: list[int] = []
+    for _ in range(count):
+        value, pos = _read_varint(buf, pos)
+        index_path.append(value)
+    return index_path, buf[pos:]
+
+
+def _resolve_message_by_index(file_descriptor: object, index_path: list[int]):
+    """Resolve a message Descriptor by walking the message-index path.
+
+    The first index selects a top-level message type in the file; subsequent
+    indices select nested message types within it.
+
+    Raises ValueError if any index is out of range.
+    """
+    top_level = list(file_descriptor.message_types_by_name.values())  # type: ignore[attr-defined]
+    if not index_path:
+        index_path = [0]
+
+    first = index_path[0]
+    if first < 0 or first >= len(top_level):
+        raise ValueError(
+            f"protobuf message index {first} out of range "
+            f"(file declares {len(top_level)} top-level message types)"
+        )
+    descriptor = top_level[first]
+
+    for idx in index_path[1:]:
+        nested = list(descriptor.nested_types)
+        if idx < 0 or idx >= len(nested):
+            raise ValueError(
+                f"nested protobuf message index {idx} out of range"
+            )
+        descriptor = nested[idx]
+
+    return descriptor
