@@ -22,10 +22,10 @@ files_reviewed_list:
   - tests/test_inbound.py
   - pyproject.toml
 findings:
-  critical: 2
-  warning: 5
-  info: 5
-  total: 12
+  critical: 0
+  warning: 2
+  info: 4
+  total: 6
 status: issues_found
 ---
 
@@ -38,296 +38,198 @@ status: issues_found
 
 ## Summary
 
-Phase 2 (Search + Decode) is well-structured and the hexagonal boundary holds:
-`domain/` and `ports/` contain no I/O or decode-library imports, decode libs
-(`confluent_kafka.schema_registry`, `fastavro`, `ProtobufDeserializer`,
-`google.protobuf`) live only in `schema_registry_http.py`, the consumer is
-strictly `assign()`-based with `enable.auto.commit=False` and a throwaway
-uuid4 group id, the REST `limit` is bounded (`ge=1, le=10000`), the
-`value:<path>` matcher uses split + dict-key access only (no `eval`/`getattr`
-on payloads), and credentials are extracted via `SecretStr` / passed straight
-into client conf without being stored or logged.
+Re-review of iteration 3 (final) for Phase 2 (Search + Decode). Evidence
+gathered:
 
-However, the review surfaced two BLOCKER-class defects:
+- `ruff check .` → **All checks passed!**
+- `python3 -m pytest -q` → **185 passed in 0.99s**
 
-1. **Protobuf decode never works** — `ProtobufDeserializer(None, ...)` raises
-   `AttributeError` at construction (confirmed empirically), so every Protobuf
-   payload becomes a `DecodeError`. This directly fails ROADMAP Phase 2
-   Success Criterion 2 ("decoded `value` for all three wire formats: Avro,
-   Protobuf, JSON"). The "success" branch below it is unreachable dead code.
-2. **DecodeError coordinates are always wrong** — the domain service calls
-   `registry.decode(raw)` with no topic/partition/offset, so every decode
-   failure surfaced to the user (REST 422, CLI exit 2, MCP error) reports
-   `[0]@0` for an empty topic instead of the real coordinates.
+**Iteration-2 fixes verified sound:**
 
-Both undermine the stated decode-failure contract and the SC-2 acceptance
-criterion. The remaining warnings concern a Protocol/implementation signature
-mismatch, premature time-window truncation, a watermark assumption in the mock
-that masks a real edge case, and JSON-fallback returning non-dict shapes.
+- **WR-01 (grpc_tools.protoc):** Confirmed. The adapter compiles via the
+  in-process `grpc_tools.protoc.main` (vendored wheel), not a system binary.
+  No shell, no `subprocess`, no injection: `schema_str` only reaches the
+  compiler as the *content* of a file inside a `tempfile.TemporaryDirectory()`
+  (0700), and `argv` is fixed (`--proto_path` pinned to the temp dir). Protobuf
+  decode works end-to-end for self-contained schemas (4 protobuf tests pass).
+- **WR-04 (bounded compile):** Confirmed. Compile runs on a `daemon` worker
+  thread joined with a 10s budget; timeout → `RuntimeError` → typed
+  `DecodeError`. Daemon flag prevents interpreter-shutdown blocking. See the
+  abandon-not-kill caveat in IN-01.
+- **WR-05 (`preserving_proto_field_name=True`):** Confirmed and tested
+  (`test_decode_protobuf_preserves_snake_case_and_nested_paths`). snake_case
+  field names survive, nested `value:payload.order_id` resolves on the Protobuf
+  path identically to Avro.
+- **WR-02 (`TransientError` in `__all__`):** Confirmed (`__init__.py:34`).
+- **WR-03 (REST/CLI/MCP `TransientError` faces):** Confirmed. REST → 503, CLI →
+  exit 3, MCP → ValueError. Each has a face test in `test_inbound.py`.
 
-## Critical Issues
+**Core invariants confirmed:**
 
-### CR-01: Protobuf decode is structurally broken — raises AttributeError at construction, fails SC-2
+- **Hexagonal boundary:** Holds. No `confluent_kafka` / `fastavro` /
+  `google.protobuf` imports in `domain/` or `ports/`; all decode libraries live
+  only in `schema_registry_http.py`. Enforced by the boundary test.
+- **Read-only:** Holds. `enable.auto.commit=False`, throwaway uuid4 `group.id`,
+  `assign()`-only (no `subscribe` anywhere in the consumer source — guarded by
+  `test_no_subscribe_in_source`).
+- **Credentials unlogged:** Holds. `sasl_password` is extracted via
+  `get_secret_value()` into a local conf dict and never stored as an attribute;
+  `sr_pass` is passed into the SR client conf and not retained
+  (`test_sr_credentials_not_logged`, `test_secret_str_not_exposed_in_repr`).
 
-**File:** `src/kafka_mcp/adapters/outbound/schema_registry_http.py:209-228`
-**Issue:**
-`_decode_protobuf` constructs `ProtobufDeserializer(None, {"use.deprecated.format": False})`.
-Passing `None` as the `message_type` does not produce a benign sentinel — the
-confluent deserializer dereferences `message_type.DESCRIPTOR` during
-`__init__`, so construction raises
-`AttributeError: 'NoneType' object has no attribute 'DESCRIPTOR'` (verified by
-running it against the installed `confluent_kafka`). That `AttributeError` is
-caught by the broad `except Exception` and re-wrapped as `DecodeError`, so
-**every Confluent-framed Protobuf payload always fails to decode**.
+**No Critical defects found.** Two Warnings remain: a real functional gap in
+the Protobuf decode path (well-known-type imports do not compile — WR-A), and a
+stale CLI dispatch table in the wired entry point that makes the new Phase 2
+`search-messages` / `get-message` subcommands unreachable via `kafka-mcp`
+(WR-B). Neither is a security or data-loss issue; both degrade the
+deliverable's real-world usability and should be fixed.
 
-This violates ROADMAP Phase 2 Success Criterion 2, which requires
-`get_message` to return a decoded `value` "for all three wire formats (Avro,
-Protobuf, JSON)." Avro and JSON work; Protobuf does not. The "KNOWN LIMITATION"
-framing (a typed stub) is accurate in effect, but it is a real correctness gap
-against an accepted, checked-off ("completed 2026-06-05") success criterion —
-not a benign deferral. Severity is BLOCKER because the phase is marked complete
-while a named SC is unmet.
-
-The unit test `test_decode_magic_byte_protobuf` does not catch this: it patches
-`ProtobufDeserializer` with a `MagicMock`, so the real `None`-construction path
-is never exercised. No test decodes a real Protobuf payload end-to-end.
-
-Additionally, lines 215-221 are **dead/unreachable code**: because construction
-on line 213 always raises, control never reaches the `hasattr(result,
-"DESCRIPTOR")` / `MessageToDict` / `isinstance(result, dict)` branches.
-
-**Fix:** Either (a) make the limitation explicit and honest by raising a typed
-`DecodeError` directly without the misleading deserializer construction, and
-update the ROADMAP/SUMMARY to record Protobuf as deferred to Phase 3; or
-(b) implement real generic Protobuf decode. Minimal honest stub:
-
-```python
-def _decode_protobuf(
-    self, raw: bytes, schema: Schema, topic: str, partition: int, offset: int
-) -> dict:
-    # Generic Protobuf decode requires a pre-compiled message class, which
-    # we do not have for arbitrary subjects. Fail with an actionable typed
-    # error instead of constructing a deserializer that cannot work.
-    raise DecodeError(
-        topic, partition, offset,
-        reason=(
-            "protobuf decode requires a pre-compiled message type; "
-            "generic decode is not supported (deferred to Phase 3)"
-        ),
-    )
-```
-
-If SC-2 must hold now, wire a message-type registry keyed by schema subject and
-construct `ProtobufDeserializer(<concrete_class>, ...)`.
-
-### CR-02: DecodeError raised on the get_message path always carries wrong coordinates ([]@0)
-
-**File:** `src/kafka_mcp/domain/search_service.py:363` (and `:319`)
-**Issue:**
-The `SchemaRegistryHttpAdapter.decode` implementation accepts
-`decode(raw, topic="", partition=0, offset=0)` and uses those to build the
-`DecodeError`. But the domain service calls it with the raw bytes only:
-
-```python
-decoded = self._registry.decode(raw_msg.raw)        # get_message, line 363
-decoded = self._registry.decode(raw_msg.raw)        # search_messages, line 319
-```
-
-So `topic`/`partition`/`offset` always fall back to the defaults `""`/`0`/`0`.
-On the strict `get_message` path the `DecodeError` propagates all the way to the
-inbound faces, which surface the (wrong) coordinates to the user:
-- REST `/tools/get_message` returns
-  `{"error": "DecodeError", "topic": "", "partition": 0, "offset": 0, ...}`
-  (rest_api.py:230-240) for a real message at, e.g., `payments[3]@1500`.
-- CLI prints `Error: decode failed for [0]@0: ...` (cli.py:395-401).
-- MCP raises `ValueError("Decode failed: [0]@0: ...")` (mcp_stdio.py:184-187).
-
-This is a correctness/observability defect: a decode failure during an
-investigation reports the wrong message location, which can send a responder to
-the wrong topic/offset. It is masked in tests because `MockSchemaRegistry`
-hardcodes `DecodeError(self._decode_topic, 0, 0, ...)` and the inbound tests use
-the `corrupt` topic shortcut, so no test asserts that real coordinates flow
-through.
-
-**Fix:** Pass the message coordinates through at the call sites and align the
-Protocol signature (see WR-01):
-
-```python
-# get_message
-decoded = self._registry.decode(
-    raw_msg.raw, raw_msg.topic, raw_msg.partition, raw_msg.offset
-)
-
-# search_messages (inside the per-message loop)
-try:
-    decoded = self._registry.decode(
-        raw_msg.raw, raw_msg.topic, raw_msg.partition, raw_msg.offset
-    )
-except DecodeError:
-    decoded = None
-```
+## Narrative Findings (AI reviewer)
 
 ## Warnings
 
-### WR-01: SchemaRegistryPort.decode signature does not match the adapter (and the NullRegistry/mocks)
+### WR-A: Protobuf schemas importing well-known types fail to decode
 
-**File:** `src/kafka_mcp/ports/schema_registry.py:33` vs
-`src/kafka_mcp/adapters/outbound/schema_registry_http.py:88-94`
-**Issue:**
-The Protocol declares `def decode(self, raw: bytes) -> dict[str, Any] | None`,
-but the real adapter implements `decode(self, raw, topic="", partition=0,
-offset=0)`. `_NullSchemaRegistry.decode` (lib.py:59) and the test mocks
-(`MockSchemaRegistry.decode`) implement only `(self, raw)`. Because the extra
-adapter params are keyword-defaulted, `runtime_checkable` `isinstance` still
-passes and the single-arg call site works — but the contract is ambiguous and
-is the root cause of CR-02 (the domain layer cannot pass coordinates without
-the Protocol blessing it). The mismatch also means a future caller who passes
-coordinates to a mock/null registry will get a `TypeError`.
-**Fix:** Make the Protocol the source of truth:
+**File:** `src/kafka_mcp/adapters/outbound/schema_registry_http.py:340-348`
+**Issue:** `_run_protoc_bounded` invokes `grpc_tools.protoc.main` with an
+`argv` whose only include path is the temp dir:
 
 ```python
-def decode(
-    self, raw: bytes, topic: str = "", partition: int = 0, offset: int = 0
-) -> dict[str, Any] | None: ...
+argv = [
+    "protoc",
+    f"--proto_path={tmpdir}",
+    f"--descriptor_set_out={out_path}",
+    "--include_imports",
+    proto_path,
+]
 ```
 
-Then update `_NullSchemaRegistry.decode` and both test `MockSchemaRegistry`
-classes to accept the same optional parameters.
+`grpc_tools.protoc.main` does **not** auto-inject the bundled well-known-type
+include path (that is done by grpc_tools' build helpers, not by `main`). So any
+registered `.proto` that does `import "google/protobuf/timestamp.proto";`
+(or wrappers / struct / any / duration — all extremely common in Confluent
+Protobuf payloads, e.g. event timestamps) fails compilation and is surfaced as
+a `DecodeError`. Reproduced directly against the adapter's exact argv:
 
-### WR-02: search_messages time window can truncate prematurely (offset order != timestamp order)
+```
+adapter argv rc (nonzero=fails to decode): 1
+with well-known include rc (0=works):     0
+```
 
-**File:** `src/kafka_mcp/adapters/outbound/confluent_consumer.py:258-259`
-(driven by `search_service.py:307-314`)
-**Issue:**
-`fetch_messages` breaks the scan on the **first** message whose
-`timestamp_utc > time_to`:
+The grpc_tools wheel already vendors these protos at
+`grpc_tools/_proto/google/protobuf/*.proto`, so the fix is to add that
+directory as a second `--proto_path`. The existing tests only exercise
+self-contained schemas (`Person`, `Order`), so this gap is invisible to the
+suite — real-world schemas with a timestamp field will not decode in
+`get_message` (hard `DecodeError` to the caller) and silently decode to
+`value=None` in `search_messages` (degrading `value:<path>` matching and
+Evidence extraction).
+
+**Fix:**
+```python
+import grpc_tools
+_WELL_KNOWN_INCLUDE = os.path.join(
+    os.path.dirname(grpc_tools.__file__), "_proto"
+)
+
+argv = [
+    "protoc",
+    f"--proto_path={tmpdir}",
+    f"--proto_path={_WELL_KNOWN_INCLUDE}",  # vendored google/protobuf/*.proto
+    f"--descriptor_set_out={out_path}",
+    "--include_imports",
+    proto_path,
+]
+```
+Add a regression test: a `.proto` importing `google/protobuf/timestamp.proto`
+must decode to a dict (not raise `DecodeError`).
+
+### WR-B: Wired `kafka-mcp` entry point cannot reach the new Phase 2 CLI subcommands
+
+**File:** `src/kafka_mcp/server.py:62` (entry point declared in
+`pyproject.toml:37` `kafka-mcp = "kafka_mcp.server:main"`); affects the
+in-scope `src/kafka_mcp/adapters/inbound/cli.py` Phase 2 additions.
+**Issue:** `cli.py` adds `search-messages` and `get-message` subcommands (the
+Phase 2 search/decode CLI face), but the dispatcher in `server.py` — the actual
+console-script entry point — still gates CLI mode on a stale set:
 
 ```python
-if time_to is not None and ts_utc > time_to:
-    break
+_cli_subcommands = {"list-topics", "describe-topic"}
+if args and args[0] in _cli_subcommands:
+    from kafka_mcp.adapters.inbound.cli import main as cli_main
+    cli_main(args)
+    return
 ```
 
-Kafka offsets are not strictly ordered by `CreateTime` (producers can backdate
-timestamps, and partitions interleave producer clocks). A single out-of-order
-message with a future timestamp will stop the scan early and silently drop
-later in-window messages on that partition. For an investigator searching a
-time window, this is a correctness gap (false negatives). It is invisible in
-tests because the mock messages are monotonically timestamped.
-**Fix:** Use `continue` (skip out-of-window messages) instead of `break`, and
-rely on `stop_offset`/`max_scan`/`limit` for termination; or document the
-"timestamps assumed monotonic per partition" assumption explicitly as an
-accepted limitation. At minimum, do not silently terminate on the first
-over-bound message.
+Running `kafka-mcp search-messages --key X` or `kafka-mcp get-message t 0 5`
+does **not** match this set, falls through, and instead boots the
+FastAPI/uvicorn HTTP server (the default branch). The new CLI face is therefore
+unreachable through the documented `kafka-mcp ...` invocation even though
+`cli.py` fully implements it and is tested in isolation
+(`test_inbound.py`). The unit tests call `cli.run_*` / `cli.parse_args`
+directly and never go through `server.main`, so they do not catch this.
 
-### WR-03: time_to is documented as exclusive but compared with `>` (inclusive boundary)
-
-**File:** `src/kafka_mcp/adapters/outbound/confluent_consumer.py:258`;
-`src/kafka_mcp/domain/search_service.py:245`
-**Issue:**
-The service docstring states `time_to` is the "Exclusive end of time window",
-but the adapter keeps a message when `ts_utc <= time_to` (it only breaks on
-`ts_utc > time_to`). A message whose timestamp equals `time_to` is therefore
-**included**, contradicting the documented exclusive semantics. Off-by-one at
-the boundary.
-**Fix:** Use `if time_to is not None and ts_utc >= time_to:` to honor the
-documented exclusive bound (combined with the WR-02 `continue` fix), or update
-the docstring to say the bound is inclusive.
-
-### WR-04: JSON fallback can return a non-dict-shaped wrapper, violating the value contract
-
-**File:** `src/kafka_mcp/adapters/outbound/schema_registry_http.py:234-239`
-**Issue:**
-When `json.loads(raw)` yields a non-dict (list/int/str/bool/null), the adapter
-wraps it as `{"value": result}`. `KafkaMessage.value` is typed
-`dict[str, Any] | None`, so this keeps types happy, but it silently injects a
-synthetic `value` key that did not exist in the payload. Downstream
-`value:<path>` matching and Evidence extraction then operate on a fabricated
-shape (e.g. a JSON array payload becomes `{"value": [...]}`), which can produce
-surprising/incorrect matches and makes raw vs decoded reconciliation harder.
-**Fix:** Decide explicitly: either (a) return `None` for non-object JSON (the
-payload had no object body to decode), keeping `raw` as the source of truth, or
-(b) keep the wrapper but document the `"value"` envelope key clearly in the
-Port contract and in the matcher semantics so callers know to expect it.
-
-### WR-05: get_message uses `poll_timeout * 5` while fetch_messages uses 1× — a None poll is mapped to MessageNotFoundError
-
-**File:** `src/kafka_mcp/adapters/outbound/confluent_consumer.py:376-382`
-**Issue:**
-`fetch_message` already range-checks the offset against watermarks, then polls
-once with `poll_timeout * 5` and treats `poll() is None` (timeout) **and**
-`msg.error()` as `MessageNotFoundError`. A transient broker timeout for an
-offset that is genuinely in range (low <= offset < high) is therefore reported
-to the user as "message not found" (REST 404, CLI exit 1), conflating a
-transient I/O failure with a real absence — the same not-found-vs-transient
-discrimination the code is careful about in `get_watermark_offsets` (WR-04
-there) and `get_partition_ids` (WR-01 there). This is inconsistent and can
-mislead an investigator into believing a known offset has no message.
-**Fix:** Distinguish a poll timeout from a true absence. For example, retry/poll
-in a short loop until the budget is exhausted, and raise a transient/IO error
-(or re-raise the underlying `KafkaException`) on timeout rather than
-`MessageNotFoundError`; reserve `MessageNotFoundError` for the watermark
-range-check and `msg.error()` cases.
+**Fix:**
+```python
+_cli_subcommands = {
+    "list-topics", "describe-topic", "search-messages", "get-message",
+}
+```
+(Also update the now-stale docstring at `server.py:6,28-29` to list all four
+subcommands.) Add a test that drives `server.main(["search-messages", ...])`
+with a patched `KafkaClient.from_env` to lock the dispatch table to the CLI's
+actual subparser set.
 
 ## Info
 
-### IN-01: Unused imports flagged by ruff (5 fixable nits)
+### IN-01: Bounded-protoc worker thread is abandoned, not cancelled, on timeout
 
-**File:** multiple — `ruff check .` reports 5 errors:
-- `src/kafka_mcp/ports/consumer.py:12` — `MessageNotFoundError` imported but
-  unused (F401). It is referenced only in the docstring `Raises:` block; keep it
-  importable for documentation or drop it. As written it is unused code.
-- `src/kafka_mcp/ports/schema_registry.py:11` — `DecodeError` imported but
-  unused (F401). Same situation. (Note: aligning WR-01 by adding the coordinate
-  params does not change this; it is referenced only in the docstring.)
-- `src/kafka_mcp/adapters/outbound/confluent_consumer.py:17` — import block
-  un-sorted (I001); `TIMESTAMP_CREATE_TIME` should be merged into the preceding
-  `from confluent_kafka import ...` line.
-- `tests/test_adapters.py:1050` — import block un-sorted (I001).
-- `tests/test_domain.py:278` — `KafkaMessage` imported but unused (F401).
-**Fix:** `ruff check . --fix` resolves all 5. For the two Port imports, prefer a
-deliberate decision (drop them, or add `# noqa: F401  # referenced in docstring`)
-rather than leaving genuinely dead imports.
+**File:** `src/kafka_mcp/adapters/outbound/schema_registry_http.py:357-364`
+**Issue:** On timeout the code raises `RuntimeError` but the daemon worker
+running `grpc_tools.protoc.main` (a native call) keeps running until it
+finishes — `join(timeout)` does not cancel it. For a pathological schema this
+leaves a native compile churning in the background while the request already
+returned a `DecodeError`. The `daemon=True` flag correctly prevents it from
+blocking interpreter shutdown, so blast radius is bounded, but under repeated
+hostile input background work could accumulate.
+**Fix:** Document the abandon-not-kill semantics inline, or cache negative
+results so a schema_str that previously timed out is not recompiled.
 
-### IN-02: Dead/unreachable code in _decode_protobuf
+### IN-02: Sync REST handlers + single shared librdkafka Consumer = threadpool aliasing
 
-**File:** `src/kafka_mcp/adapters/outbound/schema_registry_http.py:215-221`
-**Issue:** Given CR-01 (construction on line 213 always raises), the
-`hasattr(result, "DESCRIPTOR")` / `MessageToDict` / `isinstance(result, dict)`
-/ `dict(result)` branches are unreachable. The lazy `from google.protobuf...`
-import inside the function is also never executed.
-**Fix:** Remove the dead branches as part of the CR-01 fix (the honest-stub form
-above removes them entirely).
+**File:** `src/kafka_mcp/adapters/inbound/rest_api.py:158-253`
+**Issue:** The route handlers are plain `def` (not `async def`), so FastAPI
+dispatches them on its threadpool. Concurrent requests therefore share one
+`ConfluentConsumerAdapter` and call `assign()` + `poll()` on a single
+librdkafka `Consumer` from multiple threads, and mutate the adapter's
+`_schema_cache` / `_proto_descriptor_cache` dicts concurrently. The cache
+mutations are idempotent puts (benign), but concurrent `assign()`/seek on one
+Consumer can interleave partition assignments across requests. Pre-existing
+single-consumer architectural choice (Phase 1); concurrency is out of v1 scope.
+Noted because Phase 2 search/get now drive real `poll()` traffic through it.
+**Fix:** Out of scope for v1. Longer term: per-request consumer, a pool, or an
+explicit lock around assign/poll.
 
-### IN-03: PartitionInfo.leader is a hardcoded 0 placeholder (carried over, still TODO)
+### IN-03: proto3 int64/uint64/fixed64 decode to strings, mildly surprising for Evidence
 
-**File:** `src/kafka_mcp/domain/search_service.py:202`
-**Issue:** `leader=0` with a `# TODO: AdminClient` note. Harmless for Phase 2
-search/decode, but the describe output reports an incorrect leader for every
-partition. Noting so it is not forgotten before the brick ships (Phase 3).
-**Fix:** Track in Phase 3 backlog; wire real leader via AdminClient or drop the
-field from the public contract if it cannot be populated.
+**File:** `src/kafka_mcp/adapters/outbound/schema_registry_http.py:262`;
+`src/kafka_mcp/domain/search_service.py:90-109`
+**Issue:** `MessageToDict` renders proto3 64-bit integer fields as JSON strings
+by spec. `_extract_evidence_keys` coerces with `str(raw_val)` and `_matches_key`
+compares via `str(current)`, so matching still works — but a consumer reading
+`value` directly will see `"order_id": "9000000001"` (string) for a Protobuf
+int64 while the Avro path yields an int. Correctly called out in the WR-05
+comment and consistent for matching; flagged only so downstream consumers
+expecting numeric types are aware. No action required.
 
-### IN-04: get_message error-path coordinate bug is untestable with current mocks
+### IN-04: `parse_args` docstring is stale (lists only two subcommands)
 
-**File:** `tests/test_lib.py:162-165`, `tests/test_inbound.py:96-98`
-**Issue:** `MockSchemaRegistry.decode` hardcodes `DecodeError(self._decode_topic,
-0, 0, ...)` and the inbound `MockKafkaClient.get_message` raises a pre-built
-`DecodeError(topic, partition, offset, ...)` with correct coordinates. Neither
-exercises the real adapter call path, so CR-02 (coordinates dropped at the call
-site) passes all tests. This is a test-coverage gap, not a test bug.
-**Fix:** After fixing CR-02/WR-01, add a test where the registry mock echoes the
-coordinates it actually received and assert the propagated `DecodeError.topic/
-partition/offset` match the requested message.
-
-### IN-05: search_messages re-checks `len(results) >= limit` / `remaining <= 0` redundantly
-
-**File:** `src/kafka_mcp/domain/search_service.py:277-334`
-**Issue:** The limit guard is duplicated at the topic loop (277), partition loop
-(283), `remaining` computation (303-305), and inner append (332-333). Logic is
-correct but the repeated guards add cyclomatic noise and make the
-single-source-of-truth for the limit harder to follow. Low priority.
-**Fix:** Consolidate to a single early-exit check per loop iteration, or extract
-a small helper/generator that yields raw messages until the budget is hit.
+**File:** `src/kafka_mcp/adapters/inbound/cli.py:165-180`
+**Issue:** The `parse_args` docstring still says the Namespace carries
+`subcommand: "list-topics" | "describe-topic"` and omits `search-messages` /
+`get-message` and their fields. Documentation drift only; behaviour is correct.
+**Fix:** Update the docstring to enumerate all four subcommands and their
+fields.
 
 ---
 
