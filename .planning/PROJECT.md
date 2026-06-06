@@ -29,10 +29,10 @@ native/     Rust pyo3 — СКАН ПАРТИЦИЙ (реальный CPU-hotspo
 ## Requirements (v1) — KAFKA-01..07
 
 - [x] **KAFKA-01**: `list_topics` — validated in Phase 1 (Foundation)
-- [ ] **KAFKA-02**: `search_messages` по ключу + временное окно
-- [ ] **KAFKA-03**: `get_message` по topic/partition/offset
+- [x] **KAFKA-02**: `search_messages` по ключу + временное окно — validated in Phase 2
+- [x] **KAFKA-03**: `get_message` по topic/partition/offset — validated in Phase 2
 - [x] **KAFKA-04**: `describe_topic` (партиции, offset'ы) — validated in Phase 1
-- [ ] **KAFKA-05**: декод Avro/Protobuf/JSON через Schema Registry
+- [x] **KAFKA-05**: декод Avro/Protobuf/JSON через Schema Registry — validated in Phase 2
 - [x] **KAFKA-06**: read-only — временный consumer-group, ограниченный скан, без produce — validated in Phase 1
 - [ ] **KAFKA-07**: Rust-сканер включается ТОЛЬКО после профайлинга (CPU-bound доказан)
 
