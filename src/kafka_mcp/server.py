@@ -58,8 +58,13 @@ def main() -> None:
             client.close()
         return
 
-    # CLI mode: kafka-mcp list-topics | describe-topic ...
-    _cli_subcommands = {"list-topics", "describe-topic"}
+    # CLI mode: kafka-mcp list-topics | describe-topic | search-messages | get-message ...
+    _cli_subcommands = {
+        "list-topics",
+        "describe-topic",
+        "search-messages",
+        "get-message",
+    }
     if args and args[0] in _cli_subcommands:
         from kafka_mcp.adapters.inbound.cli import main as cli_main
 

@@ -339,9 +339,17 @@ class SchemaRegistryHttpAdapter:
         """
         from grpc_tools import protoc as _protoc
 
+        # WR-A: grpc_tools vendors the well-known types (google/protobuf/*.proto)
+        # under its _proto directory. Without this include path, any registered
+        # schema importing google/protobuf/timestamp.proto (or wrappers/struct/
+        # any — common in Confluent Protobuf) fails to compile.
+        _wkt_proto_path = os.path.join(
+            os.path.dirname(_protoc.__file__), "_proto"
+        )
         argv = [
             "protoc",
             f"--proto_path={tmpdir}",
+            f"--proto_path={_wkt_proto_path}",
             f"--descriptor_set_out={out_path}",
             "--include_imports",
             proto_path,

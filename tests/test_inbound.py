@@ -808,3 +808,41 @@ def test_mcp_get_message_transient_error_mapped() -> None:
                 {"topic": "transient", "partition": 0, "offset": 5},
             )
         )
+
+
+# ---------------------------------------------------------------------------
+# server.main CLI dispatch (entry point)
+# ---------------------------------------------------------------------------
+
+
+class TestServerCliDispatch:
+    """WR-B: the `kafka-mcp` entry point routes ALL CLI subcommands to the CLI.
+
+    The Phase 2 subcommands (search-messages / get-message) were missing from
+    server.main's dispatch set, so they silently fell through and booted the
+    HTTP server instead — making the CLI face unreachable for Phase 2 ops via
+    the documented `kafka-mcp ...` invocation. These tests guard every
+    subcommand routes to the CLI runner and never reaches uvicorn.
+    """
+
+    @pytest.mark.parametrize(
+        "subcommand",
+        ["list-topics", "describe-topic", "search-messages", "get-message"],
+    )
+    def test_subcommand_routes_to_cli_runner(self, subcommand: str) -> None:
+        from unittest.mock import patch
+
+        import kafka_mcp.server as server
+
+        captured: dict = {}
+
+        def _fake_cli(args: list) -> None:
+            captured["args"] = args
+
+        with patch.object(sys, "argv", ["kafka-mcp", subcommand, "x"]), patch(
+            "kafka_mcp.adapters.inbound.cli.main", _fake_cli
+        ), patch("uvicorn.run") as mock_uvicorn:
+            server.main()
+
+        assert captured.get("args") == [subcommand, "x"]
+        mock_uvicorn.assert_not_called()

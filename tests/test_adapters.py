@@ -1010,6 +1010,30 @@ class TestSchemaRegistryDecodeProtobuf:
         assert _matches_key(msg, "9000000001", "value:payload.order_id")
         assert _matches_key(msg, "7000000000", "value:customer_id")
 
+    def test_decode_protobuf_schema_importing_well_known_type(self) -> None:
+        """WR-A: a schema importing google/protobuf/timestamp.proto must compile.
+
+        The grpc_tools well-known-type include path is required on the protoc
+        argv; without it, any schema importing google/protobuf/* fails to
+        compile (rc=1) and every such payload becomes a DecodeError. This
+        compiles such a schema end-to-end through the adapter's own path.
+        """
+        proto_src = (
+            'syntax = "proto3";\n'
+            'import "google/protobuf/timestamp.proto";\n'
+            "message Event {\n"
+            "  string id = 1;\n"
+            "  google.protobuf.Timestamp created_at = 2;\n"
+            "}\n"
+        )
+        schema = _mock_schema("PROTOBUF", schema_str=proto_src)
+        with patch(_ADAPTER_MOD + ".SchemaRegistryClient"):
+            adapter = _make_sr_adapter()
+            # Must NOT raise — the WKT include path lets protoc resolve the
+            # google/protobuf/timestamp.proto import.
+            descriptor = adapter._compile_proto_descriptor(schema)
+        assert "Event" in descriptor.message_types_by_name
+
     def test_decode_unknown_schema_type(self) -> None:
         """Schema type other than AVRO/PROTOBUF → DecodeError with 'unknown schema type'."""
         from kafka_mcp.domain.errors import DecodeError
