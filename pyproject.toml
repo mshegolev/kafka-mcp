@@ -38,7 +38,7 @@ dependencies = [
     "cachetools>=7.1.4",
     "certifi>=2026.5.20",
     "fastavro>=1.12.2",
-    "protobuf>=7.35.0",
+    "protobuf>=6.30",
     "googleapis-common-protos>=1.75.0",
     "grpcio-tools>=1.60",
 ]
