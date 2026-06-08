@@ -213,11 +213,9 @@ def _create_http_mcp_server(client: KafkaClient) -> FastMCP:
     )
     def get_message(topic: str, partition: int, offset: int) -> dict:  # noqa: D401
         """Fetch a single message by exact coordinates."""
-        from kafka_mcp.domain.errors import (
-            DecodeError as _DecodeError,
-            MessageNotFoundError as _MNF,
-            TransientError as _TransientError,
-        )
+        from kafka_mcp.domain.errors import DecodeError as _DecodeError
+        from kafka_mcp.domain.errors import MessageNotFoundError as _MNF
+        from kafka_mcp.domain.errors import TransientError as _TransientError
         try:
             return _serialize_message(client.get_message(topic, partition, offset))
         except _MNF as exc:
