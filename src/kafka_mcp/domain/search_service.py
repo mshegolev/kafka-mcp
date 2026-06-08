@@ -22,6 +22,64 @@ from kafka_mcp.ports.schema_registry import SchemaRegistryPort
 _OFFSET_BEGINNING = -2
 
 
+def _extract_schema_id(raw: bytes | None) -> int | None:
+    """Extract schema_id from Confluent wire-framed bytes (if present).
+
+    The Confluent Schema Registry wire format starts with a magic byte (0x00)
+    followed by a 4-byte big-endian schema ID.  Returns the schema ID integer
+    when ``raw`` carries this framing; returns ``None`` for plain/unframed
+    payloads, short bytes, or ``None`` input.
+
+    Length guard (T-04-03 mitigation): ``len(raw) >= 5`` is checked BEFORE
+    any index access so short/malformed byte sequences never panic.
+
+    Args:
+        raw: Raw message bytes (value or key).  May be ``None``.
+
+    Returns:
+        Integer schema ID when framed; ``None`` otherwise.
+    """
+    if not raw or len(raw) < 5 or raw[0] != 0x00:
+        return None
+    return int.from_bytes(raw[1:5], "big")
+
+
+def _decode_key(
+    raw_key: bytes | None,
+    registry: SchemaRegistryPort,
+    topic: str,
+    partition: int,
+    offset: int,
+) -> dict | None:
+    """Decode message key via SchemaRegistryPort (resilient path).
+
+    Attempts decode ONLY when ``raw_key`` carries Confluent framing
+    (magic byte 0x00 at index 0, length >= 5).  Plain/string keys return
+    ``None`` without calling the registry.  ``DecodeError`` is caught and
+    swallowed — the message is never dropped due to a key decode failure
+    (mirrors the resilient value-decode pattern in ``search_messages``).
+
+    Reuses the existing ``SchemaRegistryPort.decode()`` method — no new
+    ``decode_key`` method is added to the port (D-KEY-01 decision).
+
+    Args:
+        raw_key: Raw key bytes from the Kafka message.  May be ``None``.
+        registry: Injected :class:`~kafka_mcp.ports.schema_registry.SchemaRegistryPort`.
+        topic: Topic name (forwarded to ``registry.decode``).
+        partition: Partition index (forwarded to ``registry.decode``).
+        offset: Message offset (forwarded to ``registry.decode``).
+
+    Returns:
+        Decoded key dict when decode succeeds; ``None`` otherwise.
+    """
+    if not raw_key or len(raw_key) < 5 or raw_key[0] != 0x00:
+        return None
+    try:
+        return registry.decode(raw_key, topic, partition, offset)
+    except DecodeError:
+        return None
+
+
 def _matches_key(
     msg: KafkaMessage, key: str, key_field: str | None
 ) -> bool:
@@ -328,8 +386,32 @@ class TopicService:
                     evidence_keys = _extract_evidence_keys(
                         decoded, raw_msg.headers
                     )
+
+                    # KEY-01: resilient key decode (DecodeError swallowed)
+                    key_decoded = _decode_key(
+                        raw_msg.raw_key,
+                        self._registry,
+                        raw_msg.topic,
+                        raw_msg.partition,
+                        raw_msg.offset,
+                    )
+
+                    # KEY-02: schema_id dict from Confluent wire framing
+                    _val_id = _extract_schema_id(raw_msg.raw)
+                    _key_id = _extract_schema_id(raw_msg.raw_key)
+                    schema_id = (
+                        {"value": _val_id, "key": _key_id}
+                        if _val_id is not None or _key_id is not None
+                        else None
+                    )
+
                     msg = raw_msg.model_copy(
-                        update={"value": decoded, "keys": evidence_keys}
+                        update={
+                            "value": decoded,
+                            "keys": evidence_keys,
+                            "key_decoded": key_decoded,
+                            "schema_id": schema_id,
+                        }
                     )
 
                     if _matches_key(msg, key, key_field):
@@ -375,6 +457,30 @@ class TopicService:
         )
 
         evidence_keys = _extract_evidence_keys(decoded, raw_msg.headers)
+
+        # KEY-01: resilient key decode (DecodeError swallowed — strict only for value)
+        key_decoded = _decode_key(
+            raw_msg.raw_key,
+            self._registry,
+            raw_msg.topic,
+            raw_msg.partition,
+            raw_msg.offset,
+        )
+
+        # KEY-02: schema_id dict from Confluent wire framing
+        _val_id = _extract_schema_id(raw_msg.raw)
+        _key_id = _extract_schema_id(raw_msg.raw_key)
+        schema_id = (
+            {"value": _val_id, "key": _key_id}
+            if _val_id is not None or _key_id is not None
+            else None
+        )
+
         return raw_msg.model_copy(
-            update={"value": decoded, "keys": evidence_keys}
+            update={
+                "value": decoded,
+                "keys": evidence_keys,
+                "key_decoded": key_decoded,
+                "schema_id": schema_id,
+            }
         )
