@@ -31,6 +31,7 @@ dev = [
     "pytest-asyncio>=0.23",
     "ruff>=0.5",
     "responses>=0.25",
+    "pytest-benchmark>=4.0",
 ]
 
 [project.scripts]
@@ -47,7 +48,7 @@ target-version = "py310"
 select = ["E", "F", "W", "I", "B", "UP"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "tests/benchmarks"]
 asyncio_mode = "auto"
 
 [dependency-groups]
