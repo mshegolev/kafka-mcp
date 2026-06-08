@@ -38,13 +38,13 @@ Requirements for the v1.1 release. Each maps to exactly one roadmap phase.
 
 ### Extended decode & transport (KEY / HTTP)
 
-- [ ] **KEY-01**: `search_messages` and `get_message` decode the message **key**
+- [x] **KEY-01**: `search_messages` and `get_message` decode the message **key**
   via Schema Registry when the key is schema-encoded, falling back to the raw /
   string key when it is not (no crash on plain keys).
-- [ ] **KEY-02**: `KafkaMessage` surfaces the Schema Registry `schema_id` for the
+- [x] **KEY-02**: `KafkaMessage` surfaces the Schema Registry `schema_id` for the
   decoded value (and key when key-decoded), exposed identically across all four
   faces.
-- [ ] **HTTP-01**: `server.json` declares a streamable-HTTP transport entry
+- [x] **HTTP-01**: `server.json` declares a streamable-HTTP transport entry
   alongside stdio, so the FastAPI face is discoverable as an MCP HTTP server; the
   declared endpoint matches the actual FastAPI route.
 
@@ -87,9 +87,9 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| KEY-01 | Phase 4 | Pending |
-| KEY-02 | Phase 4 | Pending |
-| HTTP-01 | Phase 4 | Pending |
+| KEY-01 | Phase 4 | Complete |
+| KEY-02 | Phase 4 | Complete |
+| HTTP-01 | Phase 4 | Complete |
 | LAG-01 | Phase 5 | Pending |
 | LAG-02 | Phase 5 | Pending |
 | LAG-03 | Phase 5 | Pending |
