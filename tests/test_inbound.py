@@ -1010,3 +1010,134 @@ class TestSc4Regression:
         assert isinstance(msg, KafkaMessage)
         assert msg.topic == "orders"
         assert msg.offset == 42
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 Plan 02: 4-face raw_key base64 serialization (Task 2 RED)
+# ---------------------------------------------------------------------------
+
+# Sample message with raw_key, key_decoded, and schema_id for serialization tests
+_RAW_KEY_BYTES = b"\x00\x00\x00\x00\x05test"
+_SAMPLE_MSG_WITH_KEY = KafkaMessage(
+    topic="orders",
+    partition=0,
+    offset=42,
+    key="ORD-123",
+    headers={"ce-type": "order.created"},
+    value={"order_id": "ORD-123", "amount": 99},
+    timestamp_utc=_SAMPLE_TS,
+    raw=_SAMPLE_RAW,
+    raw_key=_RAW_KEY_BYTES,
+    key_decoded={"order_id": "ORD-1"},
+    schema_id={"value": 5, "key": 5},
+    source="kafka",
+    event_type="kafka_message",
+    keys={"order_id": "ORD-123", "msisdn": None, "customer_id": None, "product_id": None},
+)
+_EXPECTED_RAW_KEY_B64 = base64.b64encode(_RAW_KEY_BYTES).decode("ascii")
+
+
+class TestRestApiRawKeySerialize:
+    """REST face: _serialize_message encodes raw_key as base64."""
+
+    def test_raw_key_base64_encoded(self) -> None:
+        from kafka_mcp.adapters.inbound.rest_api import _serialize_message
+
+        result = _serialize_message(_SAMPLE_MSG_WITH_KEY)
+        assert result["raw_key"] == _EXPECTED_RAW_KEY_B64
+
+    def test_raw_key_none_is_none(self) -> None:
+        from kafka_mcp.adapters.inbound.rest_api import _serialize_message
+
+        result = _serialize_message(_SAMPLE_MSG)
+        assert result["raw_key"] is None
+
+    def test_key_decoded_passes_through(self) -> None:
+        from kafka_mcp.adapters.inbound.rest_api import _serialize_message
+
+        result = _serialize_message(_SAMPLE_MSG_WITH_KEY)
+        assert result["key_decoded"] == {"order_id": "ORD-1"}
+
+    def test_schema_id_passes_through(self) -> None:
+        from kafka_mcp.adapters.inbound.rest_api import _serialize_message
+
+        result = _serialize_message(_SAMPLE_MSG_WITH_KEY)
+        assert result["schema_id"] == {"value": 5, "key": 5}
+
+
+class TestMcpStdioRawKeySerialize:
+    """MCP stdio face: _serialize_message encodes raw_key as base64."""
+
+    def test_raw_key_base64_encoded(self) -> None:
+        from kafka_mcp.adapters.inbound.mcp_stdio import _serialize_message
+
+        result = _serialize_message(_SAMPLE_MSG_WITH_KEY)
+        assert result["raw_key"] == _EXPECTED_RAW_KEY_B64
+
+    def test_raw_key_none_is_none(self) -> None:
+        from kafka_mcp.adapters.inbound.mcp_stdio import _serialize_message
+
+        result = _serialize_message(_SAMPLE_MSG)
+        assert result["raw_key"] is None
+
+    def test_key_decoded_passes_through(self) -> None:
+        from kafka_mcp.adapters.inbound.mcp_stdio import _serialize_message
+
+        result = _serialize_message(_SAMPLE_MSG_WITH_KEY)
+        assert result["key_decoded"] == {"order_id": "ORD-1"}
+
+    def test_schema_id_passes_through(self) -> None:
+        from kafka_mcp.adapters.inbound.mcp_stdio import _serialize_message
+
+        result = _serialize_message(_SAMPLE_MSG_WITH_KEY)
+        assert result["schema_id"] == {"value": 5, "key": 5}
+
+
+class TestCliRawKeySerialize:
+    """CLI face: _serialize_message_for_cli encodes raw_key as base64."""
+
+    def test_raw_key_base64_encoded(self) -> None:
+        from kafka_mcp.adapters.inbound.cli import _serialize_message_for_cli
+
+        result = _serialize_message_for_cli(_SAMPLE_MSG_WITH_KEY)
+        assert result["raw_key"] == _EXPECTED_RAW_KEY_B64
+
+    def test_raw_key_none_is_none(self) -> None:
+        from kafka_mcp.adapters.inbound.cli import _serialize_message_for_cli
+
+        result = _serialize_message_for_cli(_SAMPLE_MSG)
+        assert result["raw_key"] is None
+
+    def test_key_decoded_passes_through(self) -> None:
+        from kafka_mcp.adapters.inbound.cli import _serialize_message_for_cli
+
+        result = _serialize_message_for_cli(_SAMPLE_MSG_WITH_KEY)
+        assert result["key_decoded"] == {"order_id": "ORD-1"}
+
+    def test_schema_id_passes_through(self) -> None:
+        from kafka_mcp.adapters.inbound.cli import _serialize_message_for_cli
+
+        result = _serialize_message_for_cli(_SAMPLE_MSG_WITH_KEY)
+        assert result["schema_id"] == {"value": 5, "key": 5}
+
+
+class TestFourFaceSymmetry:
+    """4-face symmetry: all faces produce identical raw_key/key_decoded/schema_id."""
+
+    def test_four_face_raw_key_symmetry(self) -> None:
+        from kafka_mcp.adapters.inbound.cli import _serialize_message_for_cli
+        from kafka_mcp.adapters.inbound.mcp_stdio import (
+            _serialize_message as mcp_ser,
+        )
+        from kafka_mcp.adapters.inbound.rest_api import (
+            _serialize_message as rest_ser,
+        )
+
+        rest_d = rest_ser(_SAMPLE_MSG_WITH_KEY)
+        mcp_d = mcp_ser(_SAMPLE_MSG_WITH_KEY)
+        cli_d = _serialize_message_for_cli(_SAMPLE_MSG_WITH_KEY)
+
+        for face, d in [("rest", rest_d), ("mcp", mcp_d), ("cli", cli_d)]:
+            assert d["raw_key"] == _EXPECTED_RAW_KEY_B64, f"{face}: raw_key mismatch"
+            assert d["key_decoded"] == {"order_id": "ORD-1"}, f"{face}: key_decoded mismatch"
+            assert d["schema_id"] == {"value": 5, "key": 5}, f"{face}: schema_id mismatch"
