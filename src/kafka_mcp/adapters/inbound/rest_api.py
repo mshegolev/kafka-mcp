@@ -167,10 +167,9 @@ def _create_http_mcp_server(client: KafkaClient) -> FastMCP:
     )
     def describe_topic(topic: str) -> dict:  # noqa: D401
         """Describe a single topic by name."""
-        from kafka_mcp.domain.errors import TopicNotFoundError as _TopicNotFoundError
         try:
             return client.describe_topic(topic).model_dump()
-        except _TopicNotFoundError as exc:
+        except TopicNotFoundError as exc:
             raise ValueError(f"Topic not found: {exc.topic!r}") from exc
 
     @http_mcp.tool(
@@ -218,21 +217,18 @@ def _create_http_mcp_server(client: KafkaClient) -> FastMCP:
     )
     def get_message(topic: str, partition: int, offset: int) -> dict:  # noqa: D401
         """Fetch a single message by exact coordinates."""
-        from kafka_mcp.domain.errors import DecodeError as _DecodeError
-        from kafka_mcp.domain.errors import MessageNotFoundError as _MNF
-        from kafka_mcp.domain.errors import TransientError as _TransientError
         try:
             return _serialize_message(client.get_message(topic, partition, offset))
-        except _MNF as exc:
+        except MessageNotFoundError as exc:
             raise ValueError(
                 f"Message not found: {exc.topic}[{exc.partition}]@{exc.offset}"
             ) from exc
-        except _TransientError as exc:
+        except TransientError as exc:
             raise ValueError(
                 f"Transient read failure: "
                 f"{exc.topic}[{exc.partition}]@{exc.offset}: {exc.reason}"
             ) from exc
-        except _DecodeError as exc:
+        except DecodeError as exc:
             raise ValueError(
                 f"Decode failed: {exc.topic}[{exc.partition}]@{exc.offset}: {exc.reason}"
             ) from exc
