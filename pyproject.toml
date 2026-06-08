@@ -56,9 +56,9 @@ dev = [
 kafka-mcp = "kafka_mcp.server:main"
 
 [project.urls]
-Homepage = "https://github.com/OWNER/kafka-mcp"
-Repository = "https://github.com/OWNER/kafka-mcp"
-Issues = "https://github.com/OWNER/kafka-mcp/issues"
+Homepage = "https://github.com/mshegolev/kafka-mcp"
+Repository = "https://github.com/mshegolev/kafka-mcp"
+Issues = "https://github.com/mshegolev/kafka-mcp/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/kafka_mcp"]

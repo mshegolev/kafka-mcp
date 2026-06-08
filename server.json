@@ -1,9 +1,9 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.OWNER/kafka-mcp",
+  "name": "io.github.mshegolev/kafka-mcp",
   "description": "Read-only Kafka MCP brick — list topics, describe partitions, search messages by key in a time window, retrieve individual messages; safe for investigator agents.",
   "repository": {
-    "url": "https://github.com/OWNER/kafka-mcp",
+    "url": "https://github.com/mshegolev/kafka-mcp",
     "source": "github"
   },
   "version": "0.1.0",
