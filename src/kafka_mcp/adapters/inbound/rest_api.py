@@ -32,6 +32,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 
 from fastapi import FastAPI, HTTPException
+from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field
 
 from kafka_mcp.adapters.inbound.lib import KafkaClient
@@ -42,6 +44,8 @@ from kafka_mcp.domain.errors import (
     TransientError,
 )
 from kafka_mcp.domain.models import KafkaMessage
+
+_READ_ONLY = ToolAnnotations(readOnlyHint=True)
 
 # ---------------------------------------------------------------------------
 # Request models (T-04-01: Pydantic validates inputs at the boundary)
@@ -124,6 +128,115 @@ def _serialize_message(msg: KafkaMessage) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _create_http_mcp_server(client: KafkaClient) -> FastMCP:
+    """Build and return a FastMCP server wired to *client* for HTTP transport.
+
+    Registers the same four read-only tools as the stdio MCP server
+    (HTTP-01, T-04-08). All tools carry ``readOnlyHint=True``.
+
+    Args:
+        client: A :class:`~kafka_mcp.adapters.inbound.lib.KafkaClient`
+            instance (real or mock).
+
+    Returns:
+        A configured :class:`~mcp.server.fastmcp.FastMCP` instance for
+        streamable-HTTP transport.
+    """
+    # streamable_http_path='/' so that after FastAPI prefix-strips '/mcp',
+    # the sub-app receives requests at '/' (the only route it registers).
+    http_mcp = FastMCP("kafka-mcp-http", streamable_http_path="/")
+
+    @http_mcp.tool(
+        name="list_topics",
+        description=(
+            "Return a sorted list of Kafka topic names available on the broker. "
+            "Pass include_internal=true to include internal topics."
+        ),
+        annotations=_READ_ONLY,
+    )
+    def list_topics(include_internal: bool = False) -> list[str]:  # noqa: D401
+        """List all topics on the broker."""
+        return client.list_topics(include_internal=include_internal)
+
+    @http_mcp.tool(
+        name="describe_topic",
+        description=(
+            "Return partition metadata and watermark offsets for a single Kafka topic."
+        ),
+        annotations=_READ_ONLY,
+    )
+    def describe_topic(topic: str) -> dict:  # noqa: D401
+        """Describe a single topic by name."""
+        from kafka_mcp.domain.errors import TopicNotFoundError as _TopicNotFoundError
+        try:
+            return client.describe_topic(topic).model_dump()
+        except _TopicNotFoundError as exc:
+            raise ValueError(f"Topic not found: {exc.topic!r}") from exc
+
+    @http_mcp.tool(
+        name="search_messages",
+        description=(
+            "Search Kafka messages by key within an optional time window. "
+            "Returns up to `limit` matching messages with decoded values and "
+            "Investigator Contract evidence fields."
+        ),
+        annotations=_READ_ONLY,
+    )
+    def search_messages(
+        key: str,
+        key_field: str | None = None,
+        topics: list[str] | None = None,
+        time_from: str | None = None,
+        time_to: str | None = None,
+        limit: int = 500,
+    ) -> list[dict]:  # noqa: D401
+        """Search messages matching *key* across topics."""
+        from datetime import datetime as _dt
+        tf = _dt.fromisoformat(time_from) if time_from is not None else None
+        tt = _dt.fromisoformat(time_to) if time_to is not None else None
+        results = client.search_messages(
+            key,
+            key_field=key_field,
+            topics=topics,
+            time_from=tf,
+            time_to=tt,
+            limit=limit,
+        )
+        return [_serialize_message(m) for m in results]
+
+    @http_mcp.tool(
+        name="get_message",
+        description=(
+            "Fetch and decode a single Kafka message by topic, partition, and offset."
+        ),
+        annotations=_READ_ONLY,
+    )
+    def get_message(topic: str, partition: int, offset: int) -> dict:  # noqa: D401
+        """Fetch a single message by exact coordinates."""
+        from kafka_mcp.domain.errors import (
+            DecodeError as _DecodeError,
+            MessageNotFoundError as _MNF,
+            TransientError as _TransientError,
+        )
+        try:
+            return _serialize_message(client.get_message(topic, partition, offset))
+        except _MNF as exc:
+            raise ValueError(
+                f"Message not found: {exc.topic}[{exc.partition}]@{exc.offset}"
+            ) from exc
+        except _TransientError as exc:
+            raise ValueError(
+                f"Transient read failure: "
+                f"{exc.topic}[{exc.partition}]@{exc.offset}: {exc.reason}"
+            ) from exc
+        except _DecodeError as exc:
+            raise ValueError(
+                f"Decode failed: {exc.topic}[{exc.partition}]@{exc.offset}: {exc.reason}"
+            ) from exc
+
+    return http_mcp
+
+
 def create_app(client: KafkaClient) -> FastAPI:
     """Build and return a FastAPI app wired to *client*.
 
@@ -132,6 +245,7 @@ def create_app(client: KafkaClient) -> FastAPI:
     - ``POST /tools/describe_topic``
     - ``POST /tools/search_messages``
     - ``POST /tools/get_message``
+    - ``/mcp`` — FastMCP streamable-HTTP MCP transport (HTTP-01)
 
     Args:
         client: A :class:`~kafka_mcp.adapters.inbound.lib.KafkaClient`
@@ -140,23 +254,43 @@ def create_app(client: KafkaClient) -> FastAPI:
     Returns:
         A configured :class:`~fastapi.FastAPI` application instance.
     """
+    # HTTP-01: Build FastMCP server for the streamable-HTTP transport.
+    # Must be created before the lifespan context manager so session_manager
+    # is accessible for startup (FastMCP lazily creates it on streamable_http_app()).
+    # T-04-08: All four read-only tools are registered on this instance;
+    # the assign-only consumer at the KafkaClient layer enforces the structural
+    # read-only guarantee regardless of transport.
+    http_mcp = _create_http_mcp_server(client)
+    # streamable_http_path='/' so prefix-stripping by FastAPI mount works:
+    # FastAPI mounts at /mcp and strips that prefix, sub-app sees '/' route.
+    mcp_asgi_app = http_mcp.streamable_http_app()
+    # Access session_manager after streamable_http_app() to trigger lazy init.
+    _mcp_session_manager = http_mcp.session_manager
+
     @asynccontextmanager
     async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        """Release the librdkafka Consumer on server shutdown (WR-02).
+        """Start FastMCP session manager and release KafkaClient on shutdown.
 
-        The long-lived REST server otherwise leaks a connected consumer
-        (background threads/sockets) for the process lifetime.
+        Starts the StreamableHTTP session manager (HTTP-01) so that the
+        /mcp mount is fully operational. Releases the librdkafka Consumer
+        on server shutdown (WR-02).
         """
-        try:
-            yield
-        finally:
-            client.close()
+        async with _mcp_session_manager.run():
+            try:
+                yield
+            finally:
+                client.close()
 
     app = FastAPI(
         title="kafka-mcp",
         description="Read-only Kafka MCP REST adapter",
         lifespan=_lifespan,
     )
+
+    # Mount the FastMCP streamable-HTTP ASGI app at /mcp.
+    # FastAPI strips the /mcp prefix before routing to the sub-app.
+    # The sub-app's internal route is at '/' (streamable_http_path='/').
+    app.mount("/mcp", mcp_asgi_app)
 
     @app.post("/tools/list_topics")
     def _list_topics(req: ListTopicsRequest) -> dict:
