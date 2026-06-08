@@ -1484,3 +1484,126 @@ class TestFetchMessage:
         adapter.fetch_message(topic="orders", partition=0, offset=5)
 
         mock_consumer.subscribe.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 Plan 01: raw_key threading (Task 2 RED)
+# ---------------------------------------------------------------------------
+
+
+class TestFetchMessagesRawKey:
+    """fetch_messages() threads raw_key bytes into KafkaMessage (D-KEY-01)."""
+
+    def test_fetch_messages_raw_key_bytes_threaded(self) -> None:
+        """When msg.key() returns bytes, KafkaMessage.raw_key equals those bytes."""
+        raw_key_bytes = b"\x00\x00\x00\x00\x07hello"
+        mock_consumer = MagicMock()
+        msg0 = _make_msg_mock(
+            offset=5,
+            value=b'{"event":"test"}',
+            key=raw_key_bytes,
+        )
+        mock_consumer.poll.side_effect = [msg0, None]
+        adapter = _make_consumer_adapter(mock_consumer)
+
+        result = adapter.fetch_messages(
+            topic="orders",
+            partition=0,
+            start_offset=5,
+            stop_offset=100,
+            time_to=None,
+            limit=10,
+        )
+
+        assert len(result) == 1
+        assert result[0].raw_key == raw_key_bytes
+
+    def test_fetch_messages_raw_key_none_when_key_is_none(self) -> None:
+        """When msg.key() returns None, KafkaMessage.raw_key is None."""
+        mock_consumer = MagicMock()
+        msg0 = _make_msg_mock(
+            offset=5,
+            value=b'{"event":"test"}',
+            key=None,
+        )
+        mock_consumer.poll.side_effect = [msg0, None]
+        adapter = _make_consumer_adapter(mock_consumer)
+
+        result = adapter.fetch_messages(
+            topic="orders",
+            partition=0,
+            start_offset=5,
+            stop_offset=100,
+            time_to=None,
+            limit=10,
+        )
+
+        assert len(result) == 1
+        assert result[0].raw_key is None
+
+    def test_fetch_messages_key_str_still_populated(self) -> None:
+        """key: str field is still populated via UTF-8 decode alongside raw_key."""
+        raw_key_bytes = b"\x00\x00\x00\x00\x07hello"
+        mock_consumer = MagicMock()
+        msg0 = _make_msg_mock(
+            offset=5,
+            value=b'{"event":"test"}',
+            key=raw_key_bytes,
+        )
+        mock_consumer.poll.side_effect = [msg0, None]
+        adapter = _make_consumer_adapter(mock_consumer)
+
+        result = adapter.fetch_messages(
+            topic="orders",
+            partition=0,
+            start_offset=5,
+            stop_offset=100,
+            time_to=None,
+            limit=10,
+        )
+
+        assert len(result) == 1
+        # key should be the UTF-8 replacement-decoded string (bytes contain
+        # non-UTF8 prefix but errors="replace" produces a string, not None)
+        assert result[0].key is not None
+
+
+class TestFetchMessageRawKey:
+    """fetch_message() threads raw_key bytes into KafkaMessage (D-KEY-01)."""
+
+    def test_fetch_message_raw_key_bytes_threaded(self) -> None:
+        """When msg.key() returns bytes, KafkaMessage.raw_key equals those bytes."""
+        raw_key_bytes = b"\x00\x00\x00\x00\x07hello"
+        mock_consumer = MagicMock()
+        mock_consumer.get_watermark_offsets.return_value = (0, 100)
+        msg = _make_msg_mock(
+            offset=10,
+            value=b'{"event":"payment"}',
+            key=raw_key_bytes,
+        )
+        mock_consumer.poll.return_value = msg
+        adapter = _make_consumer_adapter(mock_consumer)
+
+        result = adapter.fetch_message(
+            topic="payments", partition=0, offset=10
+        )
+
+        assert result.raw_key == raw_key_bytes
+
+    def test_fetch_message_raw_key_none_when_key_is_none(self) -> None:
+        """When msg.key() returns None, KafkaMessage.raw_key is None."""
+        mock_consumer = MagicMock()
+        mock_consumer.get_watermark_offsets.return_value = (0, 100)
+        msg = _make_msg_mock(
+            offset=10,
+            value=b'{"event":"payment"}',
+            key=None,
+        )
+        mock_consumer.poll.return_value = msg
+        adapter = _make_consumer_adapter(mock_consumer)
+
+        result = adapter.fetch_message(
+            topic="payments", partition=0, offset=10
+        )
+
+        assert result.raw_key is None
