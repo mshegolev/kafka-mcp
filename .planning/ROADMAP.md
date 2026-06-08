@@ -135,7 +135,19 @@ the brick is published to Glama.
   5. `glama.json`, `server.json`, `EVALUATION.md`, `CHANGELOG.md`, `LICENSE`
      (MIT) are present and pass Glama validation; `server.json` declares the
      stdio PyPI package.
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+**Wave 1**
+
+- [ ] 03-01-PLAN.md — Scanner seam + pytest-benchmark suite + EVALUATION.md + Rust decision
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 03-02-PLAN.md — Distribution artifacts: glama.json, server.json, CHANGELOG.md, LICENSE, pyproject.toml metadata
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 03-03-PLAN.md — GitHub Actions CI (cibuildwheel matrix + tag-gated publish) + SC-4 regression tests
 
 ---
 
@@ -145,4 +157,4 @@ the brick is published to Glama.
 |-------|----------------|-------------|-----------|
 | 1. Foundation | 4/4 | Complete    | 2026-06-05 |
 | 2. Search + Decode | 5/5 | Complete    | 2026-06-06 |
-| 3. Native + Ship | 0/? | Not started | -      |
+| 3. Native + Ship | 0/3 | Not started | -      |
