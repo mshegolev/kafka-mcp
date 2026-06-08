@@ -147,6 +147,8 @@ def create_mcp_server(client: KafkaClient) -> FastMCP:
         Returns:
             List of message dicts with base64-encoded ``raw`` field.
         """
+        # WR-01: clamp limit to [1, 10000] to prevent unbounded scan via MCP.
+        limit = max(1, min(limit, 10_000))
         tf = datetime.fromisoformat(time_from) if time_from is not None else None
         if tf is not None and tf.tzinfo is None:
             tf = tf.replace(tzinfo=timezone.utc)

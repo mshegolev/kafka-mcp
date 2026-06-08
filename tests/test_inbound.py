@@ -1316,3 +1316,77 @@ class TestNaiveDatetimeGuard:
             )
         )
         assert result is not None
+
+
+# ---------------------------------------------------------------------------
+# WR-01 regression: limit must be clamped to [1, 10000] on MCP faces
+# ---------------------------------------------------------------------------
+
+
+class TestLimitUpperBound:
+    """WR-01: limit values above 10000 must be silently clamped to 10000.
+
+    The REST face guards this via Field(ge=1, le=10000).  These tests verify
+    that the HTTP MCP and stdio MCP faces apply the same cap (fix for WR-01).
+    """
+
+    def test_http_mcp_search_oversized_limit_clamped(self) -> None:
+        """HTTP MCP: limit=10_000_001 does not propagate unclamped."""
+        import asyncio
+
+        from kafka_mcp.adapters.inbound.rest_api import _create_http_mcp_server
+
+        server = _create_http_mcp_server(MockKafkaClient())
+        # No error expected; the clamp should silently cap to 10_000.
+        result = asyncio.run(
+            server.call_tool(
+                "search_messages",
+                {"key": "ORD-123", "limit": 10_000_001},
+            )
+        )
+        assert result is not None
+
+    def test_http_mcp_search_normal_limit_unchanged(self) -> None:
+        """HTTP MCP: limit=100 (within range) is accepted without change."""
+        import asyncio
+
+        from kafka_mcp.adapters.inbound.rest_api import _create_http_mcp_server
+
+        server = _create_http_mcp_server(MockKafkaClient())
+        result = asyncio.run(
+            server.call_tool(
+                "search_messages",
+                {"key": "ORD-123", "limit": 100},
+            )
+        )
+        assert result is not None
+
+    def test_stdio_mcp_search_oversized_limit_clamped(self) -> None:
+        """Stdio MCP: limit=10_000_001 does not propagate unclamped."""
+        import asyncio
+
+        from kafka_mcp.adapters.inbound.mcp_stdio import create_mcp_server
+
+        server = create_mcp_server(MockKafkaClient())
+        result = asyncio.run(
+            server.call_tool(
+                "search_messages",
+                {"key": "ORD-123", "limit": 10_000_001},
+            )
+        )
+        assert result is not None
+
+    def test_stdio_mcp_search_zero_limit_clamped_to_one(self) -> None:
+        """Stdio MCP: limit=0 is clamped up to 1 (not silently skipped)."""
+        import asyncio
+
+        from kafka_mcp.adapters.inbound.mcp_stdio import create_mcp_server
+
+        server = create_mcp_server(MockKafkaClient())
+        result = asyncio.run(
+            server.call_tool(
+                "search_messages",
+                {"key": "ORD-123", "limit": 0},
+            )
+        )
+        assert result is not None

@@ -191,6 +191,8 @@ def _create_http_mcp_server(client: KafkaClient) -> FastMCP:
         limit: int = 500,
     ) -> list[dict]:  # noqa: D401
         """Search messages matching *key* across topics."""
+        # WR-01: clamp limit to [1, 10000] to prevent unbounded scan via MCP.
+        limit = max(1, min(limit, 10_000))
         tf = datetime.fromisoformat(time_from) if time_from is not None else None
         if tf is not None and tf.tzinfo is None:
             tf = tf.replace(tzinfo=timezone.utc)
