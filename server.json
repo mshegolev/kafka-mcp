@@ -63,5 +63,40 @@
         }
       ]
     }
+  ],
+  "remotes": [
+    {
+      "name": "kafka-mcp-http",
+      "type": "streamable-http",
+      "url": "http://localhost:8000/mcp",
+      "environmentVariables": [
+        {
+          "name": "KAFKA_BOOTSTRAP_SERVERS",
+          "description": "Comma-separated Kafka broker addresses",
+          "isRequired": true,
+          "format": "string"
+        },
+        {
+          "name": "KAFKA_MCP_HOST",
+          "description": "Host to bind the HTTP server (default 127.0.0.1)",
+          "isRequired": false,
+          "format": "string",
+          "default": "127.0.0.1"
+        },
+        {
+          "name": "KAFKA_MCP_PORT",
+          "description": "Port to bind the HTTP server (default 8000)",
+          "isRequired": false,
+          "format": "string",
+          "default": "8000"
+        },
+        {
+          "name": "SCHEMA_REGISTRY_URL",
+          "description": "Confluent Schema Registry URL for decode",
+          "isRequired": false,
+          "format": "string"
+        }
+      ]
+    }
   ]
 }
