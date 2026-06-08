@@ -472,3 +472,83 @@ class TestSchemaRegistryPortExtended:
 
     def test_schema_registry_port_mock_implements(self) -> None:
         assert isinstance(MockSchemaRegistry(), SchemaRegistryPort)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 Plan 01: KafkaMessage new optional fields (Task 1 RED)
+# ---------------------------------------------------------------------------
+
+
+class TestKafkaMessageNewFields:
+    """Verify the three new optional fields: raw_key, key_decoded, schema_id."""
+
+    _BASE = {
+        "topic": "t",
+        "partition": 0,
+        "offset": 0,
+        "timestamp_utc": datetime(2026, 6, 8, 0, 0, 0, tzinfo=timezone.utc),
+        "raw": b"x",
+    }
+
+    def _make(self, **kwargs):  # type: ignore[no-untyped-def]
+        from kafka_mcp.domain.models import KafkaMessage
+
+        args = {**self._BASE, **kwargs}
+        return KafkaMessage(**args)
+
+    def test_backward_compat_no_new_fields(self) -> None:
+        """KafkaMessage constructs without error using only required fields."""
+        msg = self._make()
+        assert msg.topic == "t"
+
+    def test_raw_key_defaults_none(self) -> None:
+        msg = self._make()
+        assert msg.raw_key is None
+
+    def test_key_decoded_defaults_none(self) -> None:
+        msg = self._make()
+        assert msg.key_decoded is None
+
+    def test_schema_id_defaults_none(self) -> None:
+        msg = self._make()
+        assert msg.schema_id is None
+
+    def test_raw_key_stores_bytes(self) -> None:
+        payload = b"\x00\x00\x00\x00\x01"
+        msg = self._make(raw_key=payload)
+        assert msg.raw_key == payload
+
+    def test_key_decoded_stores_dict(self) -> None:
+        decoded = {"id": "x"}
+        msg = self._make(key_decoded=decoded)
+        assert msg.key_decoded == decoded
+
+    def test_schema_id_stores_dict(self) -> None:
+        sid = {"value": 42, "key": None}
+        msg = self._make(schema_id=sid)
+        assert msg.schema_id == sid
+
+    def test_model_dump_includes_raw_key(self) -> None:
+        msg = self._make()
+        d = msg.model_dump()
+        assert "raw_key" in d
+
+    def test_model_dump_includes_key_decoded(self) -> None:
+        msg = self._make()
+        d = msg.model_dump()
+        assert "key_decoded" in d
+
+    def test_model_dump_includes_schema_id(self) -> None:
+        msg = self._make()
+        d = msg.model_dump()
+        assert "schema_id" in d
+
+    def test_existing_fields_unchanged(self) -> None:
+        """Verify no existing KafkaMessage fields were removed or renamed."""
+        msg = self._make(key="k", headers={"h": "v"}, value={"a": 1})
+        assert msg.key == "k"
+        assert msg.headers == {"h": "v"}
+        assert msg.value == {"a": 1}
+        assert msg.source == "kafka"
+        assert msg.event_type == "kafka_message"
+        assert isinstance(msg.keys, dict)
