@@ -55,6 +55,9 @@ def _serialize_message(msg: KafkaMessage) -> dict:
     """
     data = msg.model_dump()
     data["raw"] = base64.b64encode(msg.raw).decode("ascii")
+    # KEY-02: base64-encode raw_key bytes when present (T-04-06)
+    if msg.raw_key is not None:
+        data["raw_key"] = base64.b64encode(msg.raw_key).decode("ascii")
     # Serialize datetime to ISO-8601 string for JSON compatibility
     if isinstance(data.get("timestamp_utc"), datetime):
         data["timestamp_utc"] = data["timestamp_utc"].isoformat()
