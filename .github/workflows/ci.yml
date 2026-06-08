@@ -1,0 +1,163 @@
+name: CI
+
+# Triggers:
+#   - push to main/master (tests + build)
+#   - every pull request (tests + build)
+#   - release published → tests + build + publish to PyPI
+#   - manual workflow_dispatch → tests + build + publish to PyPI
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+# Default: no extra write permissions. Publish job grants id-token: write only.
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # test: run pytest + ruff across py3.10-3.12
+  # ---------------------------------------------------------------------------
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run tests
+        run: pytest tests/ -q --ignore=tests/benchmarks
+
+      - name: Lint
+        run: ruff check src/ tests/
+
+  # ---------------------------------------------------------------------------
+  # build-pure-python: produce py3-none-any wheel + sdist via hatch
+  # Pure-Python outcome: no C extension, no Rust toolchain required.
+  # ---------------------------------------------------------------------------
+  build-pure-python:
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install hatch
+        run: pip install hatch
+
+      - name: Build wheel and sdist
+        run: hatch build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-pure-python
+          path: dist/
+
+  # ---------------------------------------------------------------------------
+  # build-wheels: cibuildwheel matrix (Linux/macOS/Windows, py3.10-3.12).
+  #
+  # PURE-PYTHON NOTE: This job is DORMANT when there is no C/Rust extension.
+  # The condition gates on the presence of native/Cargo.toml (the Rust seam
+  # from plan 03-01). Without it, this job is skipped automatically, keeping
+  # CI fast while keeping the full matrix wired for when Rust is added.
+  #
+  # T-03-03-D: Rust toolchain is NEVER silently installed for the pure-Python
+  # outcome — the cibuildwheel job is skipped via the if: condition.
+  # ---------------------------------------------------------------------------
+  build-wheels:
+    needs: [test]
+    if: ${{ hashFiles('native/Cargo.toml') != '' }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-13, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU (Linux aarch64 cross-compilation)
+        if: runner.os == 'Linux'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Build wheels (cibuildwheel)
+        uses: pypa/cibuildwheel@v2.22
+        env:
+          # Build CPython 3.10, 3.11, 3.12 only
+          CIBW_BUILD: "cp310-* cp311-* cp312-*"
+          # Skip 32-bit variants (not in the support matrix)
+          CIBW_SKIP: "*-win32 *-manylinux_i686 *-musllinux_i686"
+          # Platform architecture targets per the ROADMAP matrix:
+          #   Linux  : manylinux x86_64 + aarch64
+          #   macOS  : arm64 (Apple Silicon) + x86_64 (Intel)
+          #   Windows: AMD64 only
+          CIBW_ARCHS_LINUX: "x86_64 aarch64"
+          CIBW_ARCHS_MACOS: "arm64 x86_64"
+          CIBW_ARCHS_WINDOWS: "AMD64"
+          # Rust toolchain setup inside the manylinux/musllinux containers
+          CIBW_BEFORE_ALL_LINUX: >
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs |
+            sh -s -- -y &&
+            export PATH="$HOME/.cargo/bin:$PATH"
+          CIBW_ENVIRONMENT_LINUX: "PATH=$HOME/.cargo/bin:$PATH"
+          # Smoke-test: verify the scanner seam imports without error
+          CIBW_TEST_COMMAND: >
+            python -c
+            "from kafka_mcp.scanner import scan_partition; print('OK')"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.os }}
+          path: wheelhouse/
+
+  # ---------------------------------------------------------------------------
+  # publish: upload pure-Python wheel + sdist to PyPI.
+  #
+  # SECURITY (T-03-03-B, T-03-03-C):
+  #   - Triggered ONLY on a tagged release event or manual workflow_dispatch.
+  #     NOT triggered on every push to main.
+  #   - PYPI_TOKEN is read EXCLUSIVELY from GitHub Secrets (${{ secrets.PYPI_TOKEN }}).
+  #     The token is NEVER committed to the repository.
+  #   - Uses environment: pypi which should have a manual-approval rule in
+  #     GitHub Settings → Environments → pypi (recommended but not enforced
+  #     by this file — configure in GitHub repo settings).
+  #   - id-token: write granted only to this job (Trusted Publisher support).
+  # ---------------------------------------------------------------------------
+  publish:
+    needs: [build-pure-python]
+    runs-on: ubuntu-latest
+    # Publish only on tagged release or explicit workflow_dispatch — never on push.
+    if: >
+      github.event_name == 'release' ||
+      github.event_name == 'workflow_dispatch'
+    # Recommended: configure environment "pypi" with manual-approval rule in
+    # GitHub Settings → Environments → pypi.
+    environment: pypi
+    permissions:
+      # Required for OIDC Trusted Publisher (id-token only; no other write permissions).
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-pure-python
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # T-03-03-B: Token ONLY from GitHub secret — never hard-coded.
+          password: ${{ secrets.PYPI_TOKEN }}
+          skip-existing: true
+          verbose: true
