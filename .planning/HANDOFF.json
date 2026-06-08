@@ -1,0 +1,38 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-06-08T15:58:43.630Z",
+  "milestone": "v1.1",
+  "milestone_name": "Production-Ready & Extended",
+  "phase": "04",
+  "phase_name": "Extended Decode & Transport",
+  "phase_dir": ".planning/phases/04-extended-decode-transport",
+  "status": "paused",
+  "phase_progress": "executed + reviewed + fixed; verification (gsd-verifier) NOT yet run",
+  "completed_this_session": [
+    {"item": "Milestone v1.1 defined", "detail": "PROJECT.md + REQUIREMENTS.md (11 reqs, 4 categories) + ROADMAP.md (Phases 4-7) + STATE.md reset", "commits": ["51a9175", "b652a4f", "e5e7248"]},
+    {"item": "Phase 4 discuss", "detail": "smart-discuss, 3 grey areas accepted, 04-CONTEXT.md", "commit": "bea6d35"},
+    {"item": "Phase 4 plan", "detail": "pattern-mapper + planner (3 plans, 2 waves) + plan-checker PASSED", "commit": "751e66d"},
+    {"item": "Phase 4 execute", "detail": "04-01 (model fields + raw_key), 04-02 (key decode + schema_id + 4-face serializers), 04-03 (FastMCP /mcp HTTP mount + server.json remotes)", "commits": ["bb1fa8f", "495e0a5", "e67458c"]},
+    {"item": "Phase 4 code review + fix", "detail": "1 Critical (CR-01 naive-datetime TypeError in MCP faces) + 3 Warnings + IN-01 all fixed", "commits": ["f4584d9", "c462e67", "bb744d6", "8eecf8f", "e451018", "ac97408"]}
+  ],
+  "test_state": "270 passed, ruff clean (full suite green on main tree)",
+  "remaining_work": [
+    {"id": "phase-04-verify", "name": "Run gsd-verifier for Phase 4 -> VERIFICATION.md, then autonomous post-exec routing + transition", "status": "not_started"},
+    {"id": "phase-05", "name": "Phase 5 Consumer Lag Tooling (LAG-01/02/03)", "status": "not_started"},
+    {"id": "phase-06", "name": "Phase 6 Real-Broker E2E Contour (E2E-01/02/03, testcontainers)", "status": "not_started"},
+    {"id": "phase-07", "name": "Phase 7 Release Pipeline (REL-01/02, tag->TestPyPI dry-run + RELEASE.md)", "status": "not_started"}
+  ],
+  "blockers": [],
+  "human_actions_pending": [
+    {"action": "Phase 6 needs Docker available for testcontainers", "context": "real-broker E2E spins up Kafka + Schema Registry", "blocking": false},
+    {"action": "Phase 7 actual live PyPI push + Glama submission stays a human action", "context": "out of scope by design — autonomous builds the verified pipeline + runbook only", "blocking": false}
+  ],
+  "decisions": [
+    {"decision": "Executors run sequentially on main tree (no worktree isolation)", "rationale": "project retrospective pattern; avoids worktree merge overhead for small waves", "phase": "04"},
+    {"decision": "schema_id surfaced as dict {value,key}; key_decoded + raw_key additive (key stays str)", "rationale": "non-breaking v1.0 contract", "phase": "04"},
+    {"decision": "Real FastMCP /mcp streamable-http mount (truthful declaration), server.json remotes not transports", "rationale": "declared endpoint must actually serve MCP", "phase": "04"}
+  ],
+  "uncommitted_files": [".serena/ (Serena MCP cache — not part of project, leave untracked)"],
+  "next_action": "Run gsd-verifier for Phase 4 (goal-backward verification -> 04-VERIFICATION.md). If passed, continue autonomous: /gsd-autonomous --from 5 to build Phases 5-7. Then milestone lifecycle (audit -> complete -> cleanup).",
+  "context_notes": "Driving /gsd-new-milestone -> /gsd-autonomous end-to-end for kafka-mcp v1.1. Phase 4 is the only in-flight phase; it is code-complete, reviewed, fixed, and green, but the formal gsd-verifier pass + ROADMAP transition were not yet run when paused. Resume cleanly by verifying Phase 4 then autonomously executing 5,6,7."
+}
