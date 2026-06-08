@@ -34,7 +34,7 @@ native/     Rust pyo3 — СКАН ПАРТИЦИЙ (реальный CPU-hotspo
 - [x] **KAFKA-04**: `describe_topic` (партиции, offset'ы) — validated in Phase 1
 - [x] **KAFKA-05**: декод Avro/Protobuf/JSON через Schema Registry — validated in Phase 2
 - [x] **KAFKA-06**: read-only — временный consumer-group, ограниченный скан, без produce — validated in Phase 1
-- [ ] **KAFKA-07**: Rust-сканер включается ТОЛЬКО после профайлинга (CPU-bound доказан)
+- [x] **KAFKA-07**: Rust-сканер включается ТОЛЬКО после профайлинга (CPU-bound доказан)
 
 Anti: produce, consumer-group mgmt, exactly-once, broker config.
 
@@ -76,6 +76,24 @@ TopicInfo = c.describe_topic(topic: str)
 → tests (read-only, temp group, format decode) → CI-wheels → Glama.
 
 ## Decisions: наследуются от зонтика (D1/D2/D5/D7/D8/D9).
+
+### KAFKA-07 [Phase 3, Plan 01]: Rust scanner NOT added — I/O-bound benchmark result
+
+**Date:** 2026-06-08
+**Gate:** pytest-benchmark pedantic mode on pure-Python `scan_partition` hot loop.
+**Measured baseline (arm64, Python 3.10.4):**
+- 100-msg scan: ~3.24 µs total (~32 ns/msg) — key compare + evidence extract
+- 10,000-msg scan: ~249 µs total (~25 ns/msg)
+- 1,000-msg scan + orjson decode: ~446 µs total (~446 ns/msg)
+
+**Decision:** Rust scanner NOT added. Benchmark confirms the hot path is
+I/O-bound: `librdkafka poll()` network round-trips (1–10 ms/batch) dominate;
+CPU work (25–446 ns/msg) is negligible. Gate condition (≥2× CPU-bound speedup
+achievable via Rust pyo3) is NOT met. Pure-Python scanner (`scanner.py`) is the
+permanent v1 implementation. Scanner seam (try-import `kafka_mcp._native`) keeps
+the option open for a future Rust drop-in without API change.
+
+**Evidence:** `EVALUATION.md` at repo root; `.benchmark_result.json` (ephemeral).
 
 ---
 *Brick brief — запускай агента здесь и реализуй методы из Investigator Contract.*

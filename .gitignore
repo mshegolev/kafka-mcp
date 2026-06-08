@@ -24,6 +24,10 @@ env/
 htmlcov/
 .tox/
 
+# Benchmark artefacts (ephemeral — timing data only, not committed)
+.benchmark_result.json
+.benchmarks/
+
 # IDE
 .idea/
 .vscode/
