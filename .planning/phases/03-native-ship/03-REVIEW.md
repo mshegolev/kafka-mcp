@@ -2,9 +2,10 @@
 phase: 03-native-ship
 reviewed: 2026-06-08T00:00:00Z
 depth: standard
-files_reviewed: 7
+files_reviewed: 8
 files_reviewed_list:
   - src/kafka_mcp/scanner.py
+  - tests/test_scanner.py
   - tests/benchmarks/test_scan_benchmark.py
   - tests/test_inbound.py
   - .github/workflows/ci.yml
@@ -13,9 +14,9 @@ files_reviewed_list:
   - pyproject.toml
 findings:
   critical: 0
-  warning: 4
-  info: 4
-  total: 8
+  warning: 1
+  info: 2
+  total: 3
 status: issues_found
 ---
 
@@ -23,214 +24,111 @@ status: issues_found
 
 **Reviewed:** 2026-06-08T00:00:00Z
 **Depth:** standard
-**Files Reviewed:** 7
+**Files Reviewed:** 8
 **Status:** issues_found
 
 ## Summary
 
-Phase 3 (Native + Ship) covers the benchmark-gated scanner seam, the
-distribution manifests, packaging metadata, the SC-4 regression suite, and a
-security-sensitive CI workflow. Evidence captured during review:
+Iteration-2 adversarial re-review of Phase 3 (Native + Ship). All four
+iteration-1 fixes were verified against the live tree and confirmed sound:
 
-- `ruff check .` → **All checks passed!**
-- `python3 -m pytest -q` → **205 passed** (3 benchmarks measured, no threshold
-  asserts).
+- **WR-01 (scanner seam relocation):** `tests/test_scanner.py` contains 5 real
+  unit tests that exercise the seam. Collection confirmed in BOTH the default
+  invocation and the CI invocation (`pytest tests/ -q --ignore=tests/benchmarks`):
+  all 5 scanner tests are collected (`--collect-only` count = 5), and the CI
+  invocation runs 202 tests green. `test_scan_partition_no_native_fallback`
+  genuinely forces the `except ImportError` branch by monkeypatching
+  `builtins.__import__`, and `kafka_mcp._native` is confirmed absent in the
+  environment, so the pure-Python fallback is the real active path (not a
+  masked native import).
+- **WR-02 (OWNER placeholders):** `server.json`, `glama.json`, and
+  `pyproject.toml` all reference `github.com/mshegolev/kafka-mcp` consistently.
+  Both JSON files parse cleanly. `server.json` declares `transport.type =
+  stdio` and the `kafka-mcp` PyPI package with `registryType: pypi`. `glama.json`
+  declares `transport: stdio` + `command: kafka-mcp`. Required fields present.
+- **WR-03 (single pytest source):** No `[dependency-groups]` (PEP 735) table
+  remains. `pytest>=9` appears exactly once, under
+  `[project.optional-dependencies].dev`. All dev constraints are independently
+  satisfiable and mutually compatible against PyPI (pytest 9.0.3,
+  pytest-asyncio 1.4.0, pytest-benchmark 5.2.3). Runtime constraint
+  `protobuf>=6.30` resolves to 6.33.6, compatible with `grpcio-tools`
+  (protobuf<7 pin satisfied).
+- **WR-04 (reload teardown):** `test_scan_partition_no_native_fallback` restores
+  the real seam via `importlib.reload(scanner_mod)` in a `finally` block,
+  outside the patch context — so the genuine (native-absent) fallback is
+  restored. No cross-test leakage: the full 205-test suite passes in a single
+  process.
 
-**Security verdict (CI workflow): clean.** Each focus-area claim was verified
-against the file:
+**Security posture (intact):** `publish` job gated on
+`github.event_name == 'release' || github.event_name == 'workflow_dispatch'`
+only; `PYPI_TOKEN` read exclusively from `secrets`; `id-token: write` scoped to
+the publish job; default `permissions: contents: read`. Native `build-wheels`
+matrix is dormant via `if: hashFiles('native/Cargo.toml') != ''` — confirmed no
+`native/Cargo.toml` (and no `Cargo.toml` anywhere) exists, so the Rust toolchain
+is never silently installed (KAFKA-07 / T-03-03-D honored). Actions are pinned
+(checkout@v4, setup-python@v5, upload-artifact@v4, cibuildwheel@v2.22,
+gh-action-pypi-publish@release/v1).
 
-- Publish job is gated `if: github.event_name == 'release' || ... ==
-  'workflow_dispatch'` — it cannot run on push-to-main. `needs:
-  [build-pure-python]` and `release`/`workflow_dispatch` triggers confirmed.
-- PyPI credential flows exclusively through `${{ secrets.PYPI_TOKEN }}`, plus
-  `id-token: write` scoped to the publish job only (OIDC Trusted Publisher).
-  No hardcoded token anywhere.
-- Actions are version-pinned (`checkout@v4`, `setup-python@v5`,
-  `upload/download-artifact@v4`, `cibuildwheel@v2.22`,
-  `gh-action-pypi-publish@release/v1`).
-- `build-wheels` (cibuildwheel + Rust toolchain install) is dormant:
-  `if: hashFiles('native/Cargo.toml') != ''`. Confirmed no `native/` dir and no
-  `Cargo.toml` in the tree — so the Rust toolchain is never installed for the
-  pure-Python outcome (KAFKA-07 gate honored: I/O-bound → Rust correctly NOT
-  added).
-- Top-level `permissions: contents: read` (least privilege). No `github.event.*`
-  interpolation in any `run:` step → no script-injection surface.
+**Gate checks:** `ruff check .` → "All checks passed!". `python3 -m pytest -q`
+→ 205 passed. CI-equivalent `pytest tests/ -q --ignore=tests/benchmarks`
+→ 202 passed (205 minus 3 benchmark tests).
 
-The scanner seam is correct: only `ImportError` is caught, the pure-Python
-fallback imports and runs with no Rust toolchain, and it preserves the
-read-only property (it filters/copies dicts, never mutating inputs or touching
-a broker).
-
-No blockers. The findings below are correctness/maintainability gaps and
-ship-hygiene issues that should be fixed before tagging a public release.
+One WARNING and two INFO items below. No Critical issues. No regressions
+introduced by the iteration-1 fixes.
 
 ## Warnings
 
-### WR-01: Module-level `importorskip` silently skips the scanner *unit* tests when pytest-benchmark is absent
+### WR-01: Local dev environment does not satisfy declared dev constraints — green run was against stale versions
 
-**File:** `tests/benchmarks/test_scan_benchmark.py:29-32`
-**Issue:** The skip guard is at module scope:
-
-```python
-pytest_benchmark = pytest.importorskip("pytest_benchmark", ...)
-```
-
-`importorskip` raises `Skipped` at collection time for the **entire module**.
-That means the five non-benchmark unit tests in this file —
-`test_scan_partition_pure_python_importable`,
-`test_scan_partition_no_native_fallback`,
-`test_scan_partition_returns_correct_subset`,
-`test_scan_partition_empty_input`, `test_scan_partition_no_matches` — also get
-skipped whenever `pytest-benchmark` is not installed. The module docstring
-explicitly claims these are "always run, no benchmark fixture", but they are
-not. The scanner seam (the headline deliverable of plan 03-01, including the
-`ImportError`-fallback correctness test) has **zero coverage** in any
-environment without the optional benchmark dependency. CI happens to install
-`[dev]` (which pulls `pytest-benchmark`) *and* runs with
-`--ignore=tests/benchmarks`, so CI never executes these unit tests at all — the
-seam's correctness is effectively untested in the pipeline.
-**Fix:** Move the unit tests out of the benchmark-gated module (e.g. into
-`tests/test_scanner.py`, collected by the normal suite), and keep only the
-`benchmark`-fixture tests behind the `importorskip` guard. Alternatively, apply
-the skip per-test with `@pytest.mark.skipif` on just the benchmark functions so
-the unit tests always run:
-
-```python
-# tests/test_scanner.py — always collected, no benchmark dep
-from kafka_mcp.scanner import scan_partition
-
-def test_scan_partition_no_native_fallback() -> None:
-    ...
-```
-
-### WR-02: Published manifests ship literal `OWNER` placeholders in repository/source URLs
-
-**File:** `server.json:3,6`, `glama.json:7-8` (also `pyproject.toml:59-61`)
-**Issue:** The MCP registry manifest declares
-`"name": "io.github.OWNER/kafka-mcp"` and
-`"url": "https://github.com/OWNER/kafka-mcp"`; the Glama manifest declares
-`"sourceUrl"`/`"homepage": "https://github.com/OWNER/kafka-mcp"`. `OWNER` is an
-un-substituted template placeholder. For the MCP registry, the
-`io.github.OWNER/...` namespace must match the real GitHub org for namespace
-verification — publishing with `OWNER` will fail validation or claim a
-namespace the publisher does not own. Glama `sourceUrl` will 404. These are
-ship-blocking for the "Ship" half of the phase even though they don't affect
-the test suite.
-**Fix:** Replace every `OWNER` with the real GitHub owner/org before tagging a
-release, or wire a release-time substitution step. Add a CI guard that fails if
-any committed manifest still contains the literal `OWNER`:
-
+**File:** `pyproject.toml:48-49`
+**Issue:** The declared dev dependencies are `pytest>=9` and
+`pytest-asyncio>=1.3`, but the environment the suite was validated in has
+`pytest 8.3.4` and `pytest-asyncio 0.24.0` installed (verified via
+`pip show`). The local "205 passed" run therefore did NOT exercise the pinned
+versions; a fresh CI `pip install -e ".[dev]"` will resolve to pytest 9.0.3 and
+pytest-asyncio 1.4.0 — a major-version bump for pytest-asyncio (0.x → 1.x) that
+was never actually run locally. The risk is partially mitigated: there are zero
+`async def test_*` functions in the suite (all async work goes through
+`asyncio.run(...)`), so `asyncio_mode = "auto"` semantics do not gate any test,
+and pytest 9 introduces no collection-breaking change for this suite's
+patterns. Still, the green signal you are trusting was produced on different
+machinery than CI will use.
+**Fix:** Refresh the local environment to match CI before relying on the pass
+signal, so the pinned major versions are actually exercised:
 ```bash
-! grep -rEn 'github\.com/OWNER|io\.github\.OWNER' server.json glama.json pyproject.toml
+pip install -e ".[dev]" --upgrade
+python3 -m pytest -q   # confirm green on pytest 9.x / pytest-asyncio 1.x
 ```
-
-### WR-03: Duplicate, conflicting dev-dependency declarations in `pyproject.toml`
-
-**File:** `pyproject.toml:46-53` and `pyproject.toml:77-81`
-**Issue:** Dev dependencies are declared twice with divergent pins:
-
-```toml
-[project.optional-dependencies]
-dev = [ "pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5", "responses>=0.25",
-        "pytest-benchmark>=4.0" ]
-...
-[dependency-groups]
-dev = [ "pytest>=9.0.3", "pytest-asyncio>=1.4.0" ]
-```
-
-`[project.optional-dependencies].dev` (PEP 621, what `pip install -e ".[dev]"`
-in CI uses) requires `pytest>=8`, while the PEP 735 `[dependency-groups].dev`
-requires `pytest>=9.0.3`. Two "dev" groups with different floors is a
-maintenance trap: a contributor using `uv`/`pip`'s dependency-group resolution
-gets a different, stricter pytest than CI, and the lists are not kept in sync
-(the group omits `ruff`, `responses`, `pytest-benchmark`). This is the kind of
-drift that produces "works in CI, fails locally" (or vice-versa).
-**Fix:** Pick one mechanism. Since CI installs `.[dev]`, keep
-`[project.optional-dependencies].dev` as the single source of truth and delete
-the `[dependency-groups]` block — or make the group reference the optional
-group so they cannot diverge. At minimum reconcile the `pytest` floor.
-
-### WR-04: `test_scan_partition_no_native_fallback` leaves the `kafka_mcp.scanner` module reloaded in fallback state with no teardown
-
-**File:** `tests/benchmarks/test_scan_benchmark.py:92-118`
-**Issue:** The test deletes `kafka_mcp.scanner`/`kafka_mcp._native` from
-`sys.modules`, patches `builtins.__import__` to block `_native`, then
-`importlib.reload(scanner_mod)`. The reload mutates the real, cached
-`kafka_mcp.scanner` module object in place (binding `scan_partition` to the
-pure-Python fallback) and there is **no `finally`/fixture that reloads it back**
-to its original state once the patch exits. Today this is benign because the
-native extension is never present (the fallback is already the active path), so
-the reload is a no-op in effect. But the test is order-dependent and fragile:
-the moment a compiled `kafka_mcp._native` exists (the entire point of the
-preserved seam), this test would silently flip every subsequent test in the
-process onto the pure-Python path, masking the native code under test. A test
-that mutates global import state must restore it.
-**Fix:** Wrap the reload in a teardown that restores the module:
-
-```python
-import importlib
-import kafka_mcp.scanner as scanner_mod
-try:
-    with patch("builtins.__import__", side_effect=_block_native):
-        importlib.reload(scanner_mod)
-        sp = scanner_mod.scan_partition
-        assert callable(sp)
-finally:
-    importlib.reload(scanner_mod)  # restore real (possibly-native) seam
-```
+Alternatively, if a lower floor is acceptable and you want CI/local parity
+without forcing pytest 9, relax to `pytest>=8.3` — but only after deciding
+which floor Phase 3 intends to ship.
 
 ## Info
 
-### IN-01: `scan_partition` docstring promises a dict-typed `value`, but passes it unvalidated to `_extract_evidence_keys`
+### IN-01: `_make_messages` helper duplicated verbatim across two test modules
 
-**File:** `src/kafka_mcp/scanner.py:55-73`
-**Issue:** The docstring states the schema is `{"value": dict, ...}` and the
-fallback calls `_extract_evidence_keys(msg.get("value"), msg.get("headers",
-{}))`. `_extract_evidence_keys` only guards `value is not None` and then calls
-`value.get(alias)`; if a caller passes a `value` that is a non-`None`, non-dict
-(e.g. a JSON array, string, or `int` from a decoded scalar message), it raises
-`AttributeError` rather than returning empty evidence. The scanner is positioned
-as a reusable seam, so an undocumented hard failure on a plausible input is a
-latent footgun. Not exploitable and not hit by current tests (which always pass
-dict values).
-**Fix:** Either tighten the type contract or guard defensively, e.g. in
-`_extract_evidence_keys`: `if isinstance(value, dict):` instead of
-`if value is not None:`.
+**File:** `tests/test_scanner.py:25-62`, `tests/benchmarks/test_scan_benchmark.py:38-75`
+**Issue:** The `_make_messages` synthetic-data factory is copy-pasted
+byte-for-byte into both the relocated unit-test module and the benchmark
+module. This is a direct consequence of the WR-01 relocation. Divergence risk:
+a future edit to one copy (e.g. changing the message schema) silently desyncs
+the benchmark subject from the correctness subject.
+**Fix:** Extract the helper into a shared module (e.g.
+`tests/_scan_fixtures.py` or a `conftest.py` fixture) imported by both. Low
+priority — both copies are currently identical and small.
 
-### IN-02: `pytest_benchmark = pytest.importorskip(...)` binds a module that is never used
+### IN-02: server.json / pyproject.toml version drift hazard (manual triple-source version)
 
-**File:** `tests/benchmarks/test_scan_benchmark.py:29`
-**Issue:** The return value of `importorskip` is assigned to `pytest_benchmark`
-but never referenced; only the side effect (skip-if-absent) is wanted. ruff
-does not flag it because module-level assignments aren't unused-import checks,
-but the binding is dead and slightly misleading.
-**Fix:** Drop the assignment: `pytest.importorskip("pytest_benchmark",
-reason=...)`.
-
-### IN-03: CI `build-wheels` artifacts are never consumed by `publish` (latent gap for when Rust is added)
-
-**File:** `.github/workflows/ci.yml:81-123,138-155`
-**Issue:** `publish` does `needs: [build-pure-python]` and downloads only the
-`dist-pure-python` artifact. When `native/Cargo.toml` is later added and
-`build-wheels` activates, its per-OS wheels (`dist-${{ matrix.os }}`) are built
-but never published — the release would still ship only the pure-Python wheel,
-silently dropping the compiled wheels the matrix exists to produce. Harmless
-today (job dormant), but the seam is "wired for when Rust is added," so the
-publish wiring should match.
-**Fix:** When enabling native builds, add `build-wheels` to `publish.needs` and
-download all `dist-*` artifacts (e.g. `download-artifact` with `pattern: dist-*`
-and `merge-multiple: true`), or document that `publish` is pure-Python-only.
-
-### IN-04: `gh-action-pypi-publish@release/v1` is a moving tag (supply-chain hardening)
-
-**File:** `.github/workflows/ci.yml:158`
-**Issue:** All other actions are pinned to a version tag, but the publish action
-uses the floating `release/v1` branch. For a job that holds PyPI publish rights,
-pinning to a commit SHA (or at least an immutable `vX.Y.Z` tag) removes the
-mutable-ref risk. Low severity because this is the PyPA-maintained official
-action.
-**Fix:** Pin to an immutable ref, e.g.
-`pypa/gh-action-pypi-publish@<full-sha> # v1.x.y`.
+**File:** `server.json:9`, `server.json:13`, `pyproject.toml:7`
+**Issue:** The version `0.1.0` is hand-maintained in three places
+(`pyproject.toml` `version`, `server.json` top-level `version`, and
+`server.json` `packages[0].version`). On the next release these must be bumped
+in lockstep; a missed `server.json` bump would publish a registry entry
+pointing at a stale PyPI version. Not a defect today (all three read `0.1.0`),
+but a latent maintenance trap.
+**Fix:** Document the multi-file bump in a release checklist, or derive
+`server.json` versions from `pyproject.toml` in the release workflow. No code
+change required for this phase.
 
 ---
 
