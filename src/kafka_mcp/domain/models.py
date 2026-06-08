@@ -66,6 +66,9 @@ class KafkaMessage(BaseModel):
     value: dict[str, Any] | None = None
     timestamp_utc: datetime
     raw: bytes
+    raw_key: bytes | None = None
+    key_decoded: dict[str, Any] | None = None
+    schema_id: dict[str, int | None] | None = None
 
     # --- Investigator Contract Evidence fields ---
     source: str = "kafka"
