@@ -1201,3 +1201,118 @@ class TestHttpMcpMount:
             assert resp.status_code == 200, (
                 f"Expected 200 at /tools/list_topics but got {resp.status_code}."
             )
+
+
+# ---------------------------------------------------------------------------
+# CR-01 regression: naive datetime strings must not crash MCP faces
+# ---------------------------------------------------------------------------
+
+
+class TestNaiveDatetimeGuard:
+    """CR-01: timezone-naive ISO strings must be accepted (defaulted to UTC).
+
+    A caller who passes "2026-01-01T00:00:00" (no Z, no offset) to the MCP
+    search_messages tool must not receive a TypeError.  The CLI face already
+    guards against this; these tests verify the same guard is present in the
+    HTTP MCP and stdio MCP faces (fix for CR-01).
+    """
+
+    NAIVE_ISO = "2026-01-01T00:00:00"
+    # Use +00:00 offset (not Z) — Python 3.10 fromisoformat does not support Z.
+    AWARE_ISO = "2026-01-01T00:00:00+00:00"
+
+    # ---- HTTP MCP tool (rest_api._create_http_mcp_server) ----
+
+    def test_http_mcp_search_naive_time_from_no_crash(self) -> None:
+        """HTTP MCP search_messages: naive time_from string does not raise TypeError."""
+        import asyncio
+
+        from kafka_mcp.adapters.inbound.rest_api import _create_http_mcp_server
+
+        server = _create_http_mcp_server(MockKafkaClient())
+        # Must not raise TypeError; naive datetime would crash the consumer
+        # comparison ts_utc >= time_to if the guard is absent.
+        result = asyncio.run(
+            server.call_tool(
+                "search_messages",
+                {"key": "ORD-123", "time_from": self.NAIVE_ISO},
+            )
+        )
+        assert result is not None
+
+    def test_http_mcp_search_naive_time_to_no_crash(self) -> None:
+        """HTTP MCP search_messages: naive time_to string does not raise TypeError."""
+        import asyncio
+
+        from kafka_mcp.adapters.inbound.rest_api import _create_http_mcp_server
+
+        server = _create_http_mcp_server(MockKafkaClient())
+        result = asyncio.run(
+            server.call_tool(
+                "search_messages",
+                {"key": "ORD-123", "time_to": self.NAIVE_ISO},
+            )
+        )
+        assert result is not None
+
+    def test_http_mcp_search_aware_string_still_works(self) -> None:
+        """HTTP MCP search_messages: tz-aware ISO string (+00:00) still works."""
+        import asyncio
+
+        from kafka_mcp.adapters.inbound.rest_api import _create_http_mcp_server
+
+        server = _create_http_mcp_server(MockKafkaClient())
+        result = asyncio.run(
+            server.call_tool(
+                "search_messages",
+                {"key": "ORD-123", "time_from": self.AWARE_ISO},
+            )
+        )
+        assert result is not None
+
+    # ---- MCP stdio face (mcp_stdio.create_mcp_server) ----
+
+    def test_stdio_mcp_search_naive_time_from_no_crash(self) -> None:
+        """MCP stdio search_messages: naive time_from string does not raise TypeError."""
+        import asyncio
+
+        from kafka_mcp.adapters.inbound.mcp_stdio import create_mcp_server
+
+        server = create_mcp_server(MockKafkaClient())
+        result = asyncio.run(
+            server.call_tool(
+                "search_messages",
+                {"key": "ORD-123", "time_from": self.NAIVE_ISO},
+            )
+        )
+        assert result is not None
+
+    def test_stdio_mcp_search_naive_time_to_no_crash(self) -> None:
+        """MCP stdio search_messages: naive time_to string does not raise TypeError."""
+        import asyncio
+
+        from kafka_mcp.adapters.inbound.mcp_stdio import create_mcp_server
+
+        server = create_mcp_server(MockKafkaClient())
+        result = asyncio.run(
+            server.call_tool(
+                "search_messages",
+                {"key": "ORD-123", "time_to": self.NAIVE_ISO},
+            )
+        )
+        assert result is not None
+
+    def test_stdio_mcp_search_aware_string_still_works(self) -> None:
+        """MCP stdio search_messages: tz-aware ISO string (+00:00) still works."""
+        import asyncio
+
+        from kafka_mcp.adapters.inbound.mcp_stdio import create_mcp_server
+
+        server = create_mcp_server(MockKafkaClient())
+        result = asyncio.run(
+            server.call_tool(
+                "search_messages",
+                {"key": "ORD-123", "time_from": self.AWARE_ISO},
+            )
+        )
+        assert result is not None

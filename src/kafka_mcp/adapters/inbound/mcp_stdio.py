@@ -23,7 +23,7 @@ Usage::
 from __future__ import annotations
 
 import base64
-from datetime import datetime
+from datetime import datetime, timezone
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
@@ -148,7 +148,11 @@ def create_mcp_server(client: KafkaClient) -> FastMCP:
             List of message dicts with base64-encoded ``raw`` field.
         """
         tf = datetime.fromisoformat(time_from) if time_from is not None else None
+        if tf is not None and tf.tzinfo is None:
+            tf = tf.replace(tzinfo=timezone.utc)
         tt = datetime.fromisoformat(time_to) if time_to is not None else None
+        if tt is not None and tt.tzinfo is None:
+            tt = tt.replace(tzinfo=timezone.utc)
         results = client.search_messages(
             key,
             key_field=key_field,

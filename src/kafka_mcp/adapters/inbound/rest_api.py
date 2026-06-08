@@ -29,7 +29,7 @@ from __future__ import annotations
 import base64
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
 from mcp.server.fastmcp import FastMCP
@@ -191,9 +191,12 @@ def _create_http_mcp_server(client: KafkaClient) -> FastMCP:
         limit: int = 500,
     ) -> list[dict]:  # noqa: D401
         """Search messages matching *key* across topics."""
-        from datetime import datetime as _dt
-        tf = _dt.fromisoformat(time_from) if time_from is not None else None
-        tt = _dt.fromisoformat(time_to) if time_to is not None else None
+        tf = datetime.fromisoformat(time_from) if time_from is not None else None
+        if tf is not None and tf.tzinfo is None:
+            tf = tf.replace(tzinfo=timezone.utc)
+        tt = datetime.fromisoformat(time_to) if time_to is not None else None
+        if tt is not None and tt.tzinfo is None:
+            tt = tt.replace(tzinfo=timezone.utc)
         results = client.search_messages(
             key,
             key_field=key_field,
