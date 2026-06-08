@@ -96,4 +96,33 @@ the option open for a future Rust drop-in without API change.
 **Evidence:** `EVALUATION.md` at repo root; `.benchmark_result.json` (ephemeral).
 
 ---
+
+## Current State (shipped v1.0 — 2026-06-08)
+
+v1.0 MVP is complete and verified. All 7 requirements (KAFKA-01..07) validated;
+3 phases, 12 plans, 205 passing tests, ruff clean. The brick exposes
+`list_topics`, `describe_topic`, `search_messages`, and `get_message` identically
+across four faces (lib `KafkaClient`, MCP stdio, FastAPI `/tools/*`, `kafka-mcp`
+CLI), with structural read-only enforcement, Avro/Protobuf/JSON decode via Schema
+Registry, and the Investigator-Contract Evidence fields. ~3,400 LOC src /
+~4,100 LOC tests (Python 3.10–3.12, hatchling). Distribution artifacts
+(glama.json, server.json, MIT LICENSE, CHANGELOG, GitHub Actions CI) are prepared;
+the live PyPI/Glama publish is gated on a human-triggered tagged release.
+
+**Validated requirements:** KAFKA-01 (list_topics), KAFKA-04 (describe_topic),
+KAFKA-06 (read-only) — v1.0 Phase 1; KAFKA-02 (search_messages), KAFKA-03
+(get_message), KAFKA-05 (decode) — v1.0 Phase 2; KAFKA-07 (benchmark-gated Rust,
+resolved to pure-Python) — v1.0 Phase 3.
+
+## Next Milestone Goals (candidates for v1.1+)
+
+- Live PyPI publish + Glama submission via the tagged-release CI workflow.
+- Real-broker integration/E2E test contour (current suite is mock-based by design).
+- Optional: decode message keys via Schema Registry; expose `schema_id`; HTTP
+  transport in server.json. Rust scanner remains gated on a future CPU-bound
+  benchmark result (not anticipated).
+
+---
 *Brick brief — запускай агента здесь и реализуй методы из Investigator Contract.*
+
+*Last updated: 2026-06-08 after v1.0 milestone*
