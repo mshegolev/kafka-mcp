@@ -552,3 +552,382 @@ class TestKafkaMessageNewFields:
         assert msg.source == "kafka"
         assert msg.event_type == "kafka_message"
         assert isinstance(msg.keys, dict)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 Plan 02: _extract_schema_id helper (Task 1 RED)
+# ---------------------------------------------------------------------------
+
+
+class TestExtractSchemaId:
+    """Verify _extract_schema_id pure-byte framing math."""
+
+    def test_framed_returns_schema_id_7(self) -> None:
+        from kafka_mcp.domain.search_service import _extract_schema_id
+
+        assert _extract_schema_id(b"\x00\x00\x00\x00\x07x") == 7
+
+    def test_framed_returns_schema_id_1(self) -> None:
+        from kafka_mcp.domain.search_service import _extract_schema_id
+
+        assert _extract_schema_id(b"\x00\x00\x00\x00\x01data") == 1
+
+    def test_wrong_magic_byte_returns_none(self) -> None:
+        from kafka_mcp.domain.search_service import _extract_schema_id
+
+        assert _extract_schema_id(b"\x01\x00\x00\x00\x07") is None
+
+    def test_too_short_4_bytes_returns_none(self) -> None:
+        from kafka_mcp.domain.search_service import _extract_schema_id
+
+        assert _extract_schema_id(b"\x00\x01\x02\x03") is None
+
+    def test_empty_bytes_returns_none(self) -> None:
+        from kafka_mcp.domain.search_service import _extract_schema_id
+
+        assert _extract_schema_id(b"") is None
+
+    def test_none_returns_none(self) -> None:
+        from kafka_mcp.domain.search_service import _extract_schema_id
+
+        assert _extract_schema_id(None) is None  # type: ignore[arg-type]
+
+    def test_large_schema_id(self) -> None:
+        from kafka_mcp.domain.search_service import _extract_schema_id
+
+        # schema_id = 256 → bytes 0x00 0x00 0x01 0x00
+        raw = b"\x00\x00\x00\x01\x00" + b"payload"
+        assert _extract_schema_id(raw) == 256
+
+    def test_exactly_5_bytes_returns_id(self) -> None:
+        from kafka_mcp.domain.search_service import _extract_schema_id
+
+        assert _extract_schema_id(b"\x00\x00\x00\x00\x05") == 5
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 Plan 02: _decode_key helper (Task 1 RED)
+# ---------------------------------------------------------------------------
+
+
+class _DecodingRegistry:
+    """Mock that decodes framed bytes → dict, or raises DecodeError."""
+
+    def __init__(self, result=None, raise_error=False):  # type: ignore[no-untyped-def]
+        self.result = result or {"id": "decoded"}
+        self.raise_error = raise_error
+        self.calls: list = []
+
+    def get_schema(self, subject: str) -> dict | None:
+        return None
+
+    def decode(
+        self,
+        raw: bytes,
+        topic: str = "",
+        partition: int = 0,
+        offset: int = 0,
+    ) -> dict | None:
+        self.calls.append((raw, topic, partition, offset))
+        if self.raise_error:
+            from kafka_mcp.domain.errors import DecodeError
+
+            raise DecodeError(topic=topic, partition=partition, offset=offset, reason="test error")
+        return self.result
+
+
+class TestDecodeKey:
+    """Verify _decode_key resilient framing + error handling."""
+
+    def test_none_raw_key_returns_none(self) -> None:
+        from kafka_mcp.domain.search_service import _decode_key
+
+        reg = _DecodingRegistry()
+        assert _decode_key(None, reg, "t", 0, 0) is None  # type: ignore[arg-type]
+        assert reg.calls == []
+
+    def test_plain_string_bytes_returns_none(self) -> None:
+        from kafka_mcp.domain.search_service import _decode_key
+
+        reg = _DecodingRegistry()
+        assert _decode_key(b"plain-string", reg, "t", 0, 0) is None
+        assert reg.calls == []
+
+    def test_magic_but_too_short_returns_none(self) -> None:
+        from kafka_mcp.domain.search_service import _decode_key
+
+        reg = _DecodingRegistry()
+        assert _decode_key(b"\x00\x01\x02\x03", reg, "t", 0, 0) is None
+        assert reg.calls == []
+
+    def test_framed_key_success_returns_dict(self) -> None:
+        from kafka_mcp.domain.search_service import _decode_key
+
+        reg = _DecodingRegistry(result={"order_id": "ORD-1"})
+        raw_key = b"\x00\x00\x00\x00\x05" + b"avro-payload"
+        result = _decode_key(raw_key, reg, "orders", 0, 42)
+        assert result == {"order_id": "ORD-1"}
+        assert len(reg.calls) == 1
+        assert reg.calls[0] == (raw_key, "orders", 0, 42)
+
+    def test_decode_error_swallowed_returns_none(self) -> None:
+        from kafka_mcp.domain.search_service import _decode_key
+
+        reg = _DecodingRegistry(raise_error=True)
+        raw_key = b"\x00\x00\x00\x00\x05" + b"avro-payload"
+        result = _decode_key(raw_key, reg, "t", 0, 0)
+        assert result is None
+
+    def test_wrong_magic_byte_returns_none(self) -> None:
+        from kafka_mcp.domain.search_service import _decode_key
+
+        reg = _DecodingRegistry()
+        # first byte 0x01 — not Confluent framing
+        result = _decode_key(b"\x01\x00\x00\x00\x07" + b"payload", reg, "t", 0, 0)
+        assert result is None
+        assert reg.calls == []
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 Plan 02: search_messages() integration (Task 1 RED)
+# ---------------------------------------------------------------------------
+
+
+class TestSearchMessagesKeyDecode:
+    """Integration tests for key_decoded + schema_id population in search_messages()."""
+
+    _BASE_TS = datetime(2026, 6, 8, 0, 0, 0, tzinfo=timezone.utc)
+
+    def _make_raw_msg(self, raw_key=None):  # type: ignore[no-untyped-def]
+        from kafka_mcp.domain.models import KafkaMessage
+
+        return KafkaMessage(
+            topic="orders",
+            partition=0,
+            offset=10,
+            key="ORD-1",
+            headers={},
+            value=None,
+            timestamp_utc=self._BASE_TS,
+            raw=b"\x00\x00\x00\x00\x05" + b"value-bytes",
+            raw_key=raw_key,
+        )
+
+    class _MockConsumerWithMsg:
+        def __init__(self, msg):  # type: ignore[no-untyped-def]
+            self._msg = msg
+
+        def list_topics(self, include_internal=False):  # type: ignore[no-untyped-def]
+            return ["orders"]
+
+        def get_partition_ids(self, topic):  # type: ignore[no-untyped-def]
+            return [0]
+
+        def get_watermark_offsets(self, topic, partition):  # type: ignore[no-untyped-def]
+            return (0, 20)
+
+        def offsets_for_times(self, topic, partition, timestamp_ms):  # type: ignore[no-untyped-def]
+            return 0
+
+        def fetch_messages(self, topic, partition, start_offset, stop_offset, time_to, limit):  # type: ignore[no-untyped-def]
+            return [self._msg]
+
+        def fetch_message(self, topic, partition, offset):  # type: ignore[no-untyped-def]
+            return self._msg
+
+    def test_search_framed_key_populates_key_decoded(self) -> None:
+        from kafka_mcp.domain.search_service import TopicService
+
+        raw_key = b"\x00\x00\x00\x00\x05" + b"key-avro"
+        raw_msg = self._make_raw_msg(raw_key=raw_key)
+
+        reg = _DecodingRegistry(result={"order_id": "ORD-1"})
+        consumer = self._MockConsumerWithMsg(raw_msg)
+        svc = TopicService(consumer, reg)
+
+        results = svc.search_messages("ORD-1")
+        assert len(results) == 1
+        assert results[0].key_decoded == {"order_id": "ORD-1"}
+
+    def test_search_no_raw_key_key_decoded_is_none(self) -> None:
+        from kafka_mcp.domain.search_service import TopicService
+
+        raw_msg = self._make_raw_msg(raw_key=None)
+        reg = _DecodingRegistry()
+        consumer = self._MockConsumerWithMsg(raw_msg)
+        svc = TopicService(consumer, reg)
+
+        results = svc.search_messages("ORD-1")
+        assert len(results) == 1
+        assert results[0].key_decoded is None
+
+    def test_search_unframed_raw_key_key_decoded_is_none(self) -> None:
+        from kafka_mcp.domain.search_service import TopicService
+
+        raw_msg = self._make_raw_msg(raw_key=b"plain-key")
+        reg = _DecodingRegistry()
+        consumer = self._MockConsumerWithMsg(raw_msg)
+        svc = TopicService(consumer, reg)
+
+        results = svc.search_messages("ORD-1")
+        assert len(results) == 1
+        assert results[0].key_decoded is None
+
+    def test_search_both_framed_schema_id_dict(self) -> None:
+        from kafka_mcp.domain.search_service import TopicService
+
+        # raw value has schema_id=5; raw_key has schema_id=3
+        raw_key = b"\x00\x00\x00\x00\x03" + b"key-payload"
+        raw_msg = self._make_raw_msg(raw_key=raw_key)
+        # raw in _make_raw_msg is b"\x00\x00\x00\x00\x05" + b"value-bytes" → id=5
+
+        reg = _DecodingRegistry(result={"order_id": "ORD-1"})
+        consumer = self._MockConsumerWithMsg(raw_msg)
+        svc = TopicService(consumer, reg)
+
+        results = svc.search_messages("ORD-1")
+        assert len(results) == 1
+        assert results[0].schema_id == {"value": 5, "key": 3}
+
+    def test_search_only_value_framed_schema_id(self) -> None:
+        from kafka_mcp.domain.search_service import TopicService
+
+        raw_msg = self._make_raw_msg(raw_key=None)
+        # raw = b"\x00\x00\x00\x00\x05" + ... → value schema_id=5
+
+        reg = _DecodingRegistry()
+        consumer = self._MockConsumerWithMsg(raw_msg)
+        svc = TopicService(consumer, reg)
+
+        results = svc.search_messages("ORD-1")
+        assert len(results) == 1
+        assert results[0].schema_id == {"value": 5, "key": None}
+
+    def test_search_neither_framed_schema_id_none(self) -> None:
+        from kafka_mcp.domain.models import KafkaMessage
+        from kafka_mcp.domain.search_service import TopicService
+
+        # Unframed raw value (plain JSON) + no raw_key
+        plain_msg = KafkaMessage(
+            topic="orders",
+            partition=0,
+            offset=10,
+            key="ORD-1",
+            headers={},
+            value=None,
+            timestamp_utc=self._BASE_TS,
+            raw=b'{"order_id": "ORD-1"}',
+            raw_key=None,
+        )
+
+        reg = _DecodingRegistry()
+        consumer = self._MockConsumerWithMsg(plain_msg)
+        svc = TopicService(consumer, reg)
+
+        results = svc.search_messages("ORD-1")
+        assert len(results) == 1
+        assert results[0].schema_id is None
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 Plan 02: get_message() integration (Task 1 RED)
+# ---------------------------------------------------------------------------
+
+
+class TestGetMessageKeyDecode:
+    """Integration tests for key_decoded + schema_id in get_message()."""
+
+    _BASE_TS = datetime(2026, 6, 8, 0, 0, 0, tzinfo=timezone.utc)
+
+    def _make_raw_msg(self, raw_key=None):  # type: ignore[no-untyped-def]
+        from kafka_mcp.domain.models import KafkaMessage
+
+        return KafkaMessage(
+            topic="orders",
+            partition=0,
+            offset=42,
+            key="ORD-1",
+            headers={},
+            value=None,
+            timestamp_utc=self._BASE_TS,
+            raw=b"\x00\x00\x00\x00\x05" + b"value-bytes",
+            raw_key=raw_key,
+        )
+
+    class _MockConsumerGetMsg:
+        def __init__(self, msg):  # type: ignore[no-untyped-def]
+            self._msg = msg
+
+        def list_topics(self, include_internal=False):  # type: ignore[no-untyped-def]
+            return ["orders"]
+
+        def get_partition_ids(self, topic):  # type: ignore[no-untyped-def]
+            return [0]
+
+        def get_watermark_offsets(self, topic, partition):  # type: ignore[no-untyped-def]
+            return (0, 100)
+
+        def offsets_for_times(self, topic, partition, timestamp_ms):  # type: ignore[no-untyped-def]
+            return 0
+
+        def fetch_messages(self, topic, partition, start_offset, stop_offset, time_to, limit):  # type: ignore[no-untyped-def]
+            return []
+
+        def fetch_message(self, topic, partition, offset):  # type: ignore[no-untyped-def]
+            return self._msg
+
+    def test_get_message_framed_key_populates_key_decoded(self) -> None:
+        from kafka_mcp.domain.search_service import TopicService
+
+        raw_key = b"\x00\x00\x00\x00\x05" + b"key-avro"
+        raw_msg = self._make_raw_msg(raw_key=raw_key)
+        reg = _DecodingRegistry(result={"order_id": "ORD-1"})
+        consumer = self._MockConsumerGetMsg(raw_msg)
+        svc = TopicService(consumer, reg)
+
+        msg = svc.get_message("orders", 0, 42)
+        assert msg.key_decoded == {"order_id": "ORD-1"}
+
+    def test_get_message_schema_id_both_sides(self) -> None:
+        from kafka_mcp.domain.search_service import TopicService
+
+        raw_key = b"\x00\x00\x00\x00\x03" + b"key-payload"
+        raw_msg = self._make_raw_msg(raw_key=raw_key)
+        reg = _DecodingRegistry(result={"order_id": "ORD-1"})
+        consumer = self._MockConsumerGetMsg(raw_msg)
+        svc = TopicService(consumer, reg)
+
+        msg = svc.get_message("orders", 0, 42)
+        assert msg.schema_id == {"value": 5, "key": 3}
+
+    def test_get_message_key_decode_error_swallowed(self) -> None:
+        from kafka_mcp.domain.search_service import TopicService
+
+        raw_key = b"\x00\x00\x00\x00\x05" + b"key-avro"
+        raw_msg = self._make_raw_msg(raw_key=raw_key)
+
+        # Registry raises DecodeError on key decode
+        # We need a registry that fails ONLY for key calls
+        # Both value and key use the same decode() method here
+        # so we'll use a counter-based mock
+        class _FailOnSecondCall:
+            call_count = 0
+
+            def get_schema(self, subject):  # type: ignore[no-untyped-def]
+                return None
+
+            def decode(self, raw, topic="", partition=0, offset=0):  # type: ignore[no-untyped-def]
+                self.__class__.call_count += 1
+                if self.__class__.call_count == 2:
+                    from kafka_mcp.domain.errors import DecodeError
+
+                    raise DecodeError(topic=topic, partition=partition, offset=offset, reason="key decode error")
+                return {"order_id": "ORD-1"}
+
+        _FailOnSecondCall.call_count = 0
+        consumer = self._MockConsumerGetMsg(raw_msg)
+        svc = TopicService(consumer, _FailOnSecondCall())
+
+        # Should not raise — key DecodeError is swallowed
+        msg = svc.get_message("orders", 0, 42)
+        assert msg.key_decoded is None
