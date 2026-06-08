@@ -38,6 +38,28 @@ native/     Rust pyo3 — СКАН ПАРТИЦИЙ (реальный CPU-hotspo
 
 Anti: produce, consumer-group mgmt, exactly-once, broker config.
 
+## Current Milestone: v1.1 Production-Ready & Extended
+
+**Goal:** Take the read-only Kafka brick from prepared-MVP to live-published,
+real-broker-verified, with extended decode + new triage tooling — without
+breaking the v1.0 contract or the read-only guarantee.
+
+**Target features:**
+- **Release** — live PyPI publish + Glama submission via the tagged-release CI
+  workflow (v1.0 prepared the artifacts; v1.1 makes the publish real).
+- **Real-broker E2E** — integration/E2E contour against a real Kafka broker +
+  Schema Registry (testcontainers), with real-wire round-trips for
+  search / get / decode (complements the mock-based v1.0 suite).
+- **Extended decode + transport** — decode message *keys* via Schema Registry,
+  surface `schema_id` on `KafkaMessage`, and add an HTTP transport entry in
+  `server.json`.
+- **Triage tooling** — a new read-only consumer-group **lag / offset** visibility
+  tool, exposed identically across all four faces (lib / MCP / FastAPI / CLI).
+
+**Constraints:** Stays structurally read-only (no produce, no offset commits to
+prod groups). New tool honors the 4-face symmetry and the Investigator-Contract
+Evidence shape. Phase numbering continues from v1.0 (next is Phase 4).
+
 ## ⭐ Investigator Contract (lib-фасад)
 
 ```python
@@ -114,15 +136,34 @@ KAFKA-06 (read-only) — v1.0 Phase 1; KAFKA-02 (search_messages), KAFKA-03
 (get_message), KAFKA-05 (decode) — v1.0 Phase 2; KAFKA-07 (benchmark-gated Rust,
 resolved to pure-Python) — v1.0 Phase 3.
 
-## Next Milestone Goals (candidates for v1.1+)
+## Active Milestone: v1.1 (in progress)
 
-- Live PyPI publish + Glama submission via the tagged-release CI workflow.
-- Real-broker integration/E2E test contour (current suite is mock-based by design).
-- Optional: decode message keys via Schema Registry; expose `schema_id`; HTTP
-  transport in server.json. Rust scanner remains gated on a future CPU-bound
-  benchmark result (not anticipated).
+v1.1 is scoped (see Current Milestone above). All four candidate areas were
+promoted into scope: live publish, real-broker E2E, extended decode + HTTP
+transport, and consumer-lag tooling. Requirements are tracked in
+`REQUIREMENTS.md`; phases in `ROADMAP.md` (Phase 4+).
+
+Out of scope for v1.1: Rust scanner (remains gated on a future CPU-bound
+benchmark, not anticipated), produce/write paths, consumer-group management.
+
+## Evolution
+
+This document evolves at phase transitions and milestone boundaries.
+
+**After each phase transition** (via `/gsd-transition`):
+1. Requirements invalidated? → Move to Out of Scope with reason
+2. Requirements validated? → Move to Validated with phase reference
+3. New requirements emerged? → Add to Active
+4. Decisions to log? → Add to Key Decisions
+5. "What This Is" still accurate? → Update if drifted
+
+**After each milestone** (via `/gsd-complete-milestone`):
+1. Full review of all sections
+2. Core Value check — still the right priority?
+3. Audit Out of Scope — reasons still valid?
+4. Update Context with current state
 
 ---
 *Brick brief — запускай агента здесь и реализуй методы из Investigator Contract.*
 
-*Last updated: 2026-06-08 after v1.0 milestone*
+*Last updated: 2026-06-08 — milestone v1.1 started*
