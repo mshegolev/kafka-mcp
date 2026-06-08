@@ -14,7 +14,7 @@ to exactly one phase; phases build strictly on top of each other.
 
 - [x] **Phase 1: Foundation** - Hexagonal skeleton + broker/SR adapters + topic inspection tools (completed 2026-06-05)
 - [x] **Phase 2: Search + Decode** - search_messages, get_message, Avro/Protobuf/JSON decode (completed 2026-06-05)
-- [ ] **Phase 3: Native + Ship** - Benchmark-gated Rust scanner, all inbound faces, CI wheels, publish
+- [x] **Phase 3: Native + Ship** - Benchmark-gated Rust scanner, all inbound faces, CI wheels, publish (completed 2026-06-08)
 
 ---
 
@@ -147,7 +147,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 03-03-PLAN.md — GitHub Actions CI (cibuildwheel matrix + tag-gated publish) + SC-4 regression tests
+- [x] 03-03-PLAN.md — GitHub Actions CI (cibuildwheel matrix + tag-gated publish) + SC-4 regression tests
 
 ---
 
@@ -157,4 +157,4 @@ Plans:
 |-------|----------------|-------------|-----------|
 | 1. Foundation | 4/4 | Complete    | 2026-06-05 |
 | 2. Search + Decode | 5/5 | Complete    | 2026-06-06 |
-| 3. Native + Ship | 2/3 | In Progress|  |
+| 3. Native + Ship | 3/3 | Complete   | 2026-06-08 |
