@@ -81,14 +81,14 @@ TopicInfo = c.describe_topic(topic: str)
 
 **Date:** 2026-06-08
 **Gate:** pytest-benchmark pedantic mode on pure-Python `scan_partition` hot loop.
-**Measured baseline (arm64, Python 3.10.4):**
-- 100-msg scan: ~3.24 µs total (~32 ns/msg) — key compare + evidence extract
-- 10,000-msg scan: ~249 µs total (~25 ns/msg)
-- 1,000-msg scan + orjson decode: ~446 µs total (~446 ns/msg)
+**Measured baseline (arm64, Python 3.10.4, pytest-benchmark 5.2.3):**
+- 100-msg scan: ~4.78 µs total (~48 ns/msg) — key compare + evidence extract
+- 10,000-msg scan: ~502 µs total (~50 ns/msg)
+- 1,000-msg scan + orjson decode: ~479 µs total (~479 ns/msg)
 
 **Decision:** Rust scanner NOT added. Benchmark confirms the hot path is
 I/O-bound: `librdkafka poll()` network round-trips (1–10 ms/batch) dominate;
-CPU work (25–446 ns/msg) is negligible. Gate condition (≥2× CPU-bound speedup
+CPU work (48–479 ns/msg) is negligible. Gate condition (≥2× CPU-bound speedup
 achievable via Rust pyo3) is NOT met. Pure-Python scanner (`scanner.py`) is the
 permanent v1 implementation. Scanner seam (try-import `kafka_mcp._native`) keeps
 the option open for a future Rust drop-in without API change.

@@ -16,27 +16,27 @@ CPU-bound speedup (KAFKA-07 gate criterion: ≥2× speedup required).
 
 | Benchmark Name                 | N msgs | Match rate | Mean (µs) | StdDev (µs) | Ops/sec   | Rounds |
 |-------------------------------|--------|------------|-----------|-------------|-----------|--------|
-| test_benchmark_scan_small     | 100    | 1/100      | 3.24      | 0.071       | 308,486   | 50     |
-| test_benchmark_scan_large     | 10,000 | 10/10,000  | 249.14    | 4.730       | 4,014     | 20     |
-| test_benchmark_decode_dispatch| 1,000  | 10/1,000   | 445.68    | 11.628      | 2,244     | 30     |
+| test_benchmark_scan_small     | 100    | 1/100      | 4.78      | 0.69        | 209,134   | 50     |
+| test_benchmark_scan_large     | 10,000 | 10/10,000  | 502.14    | 54.34       | 1,991     | 20     |
+| test_benchmark_decode_dispatch| 1,000  | 10/1,000   | 478.96    | 43.08       | 2,088     | 30     |
 
 **Per-message cost (pure-Python CPU work only):**
 
-- `scan_small`: 3.24 µs / 100 msgs = **~32 ns per message** (key compare + evidence extract)
-- `scan_large`: 249.14 µs / 10,000 msgs = **~25 ns per message** (same loop, amortised)
-- `decode_dispatch`: 445.68 µs / 1,000 msgs = **~446 ns per message** (orjson.loads + key compare)
+- `scan_small`: 4.78 µs / 100 msgs = **~48 ns per message** (key compare + evidence extract)
+- `scan_large`: 502.14 µs / 10,000 msgs = **~50 ns per message** (same loop, amortised)
+- `decode_dispatch`: 478.96 µs / 1,000 msgs = **~479 ns per message** (orjson.loads + key compare)
 
 Hardware: Apple M-series arm64. Python 3.10.4 (CPython). pytest-benchmark 5.2.3.
 
 ## Analysis
 
 The scan hot loop (key comparison + dict traversal + `_extract_evidence_keys`)
-costs **~25–32 nanoseconds per message** for the pure key-compare path and
-**~446 nanoseconds per message** when `orjson.loads` is included. In a
+costs **~48–50 nanoseconds per message** for the pure key-compare path and
+**~479 nanoseconds per message** when `orjson.loads` is included. In a
 real Kafka scan, the dominant cost is `librdkafka Consumer.poll()` — a
 synchronous network round-trip to the broker, which on even a local broker
 takes **1–10 milliseconds per batch**. Even at a generous 1 ms poll latency,
-the CPU work (≤0.45 µs/msg × 500 msg/batch = ~225 µs) is **at least 4× smaller**
+the CPU work (≤0.48 µs/msg × 500 msg/batch = ~240 µs) is **at least 4× smaller**
 than a single poll(). The bottleneck is the broker network, not the CPU.
 
 A Rust scanner replacing the pure-Python byte-processing would shave the
@@ -49,8 +49,8 @@ be premature optimisation (the "premature Rust" pitfall noted in the project bri
 
 **KAFKA-07 gate result: pure-Python.**
 
-The benchmark shows **~25–32 ns per message** (key compare path) and
-**~446 ns per message** (with orjson decode). The hot path is I/O-bound:
+The benchmark shows **~48–50 ns per message** (key compare path) and
+**~479 ns per message** (with orjson decode). The hot path is I/O-bound:
 `librdkafka poll()` network round-trips dominate the real-world scan;
 the CPU work measured here is negligible relative to broker latency.
 No CPU-bound speedup ≥2× is achievable via a Rust pyo3 scanner in this
