@@ -87,23 +87,23 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| REL-01 | TBD | Pending |
-| REL-02 | TBD | Pending |
-| E2E-01 | TBD | Pending |
-| E2E-02 | TBD | Pending |
-| E2E-03 | TBD | Pending |
-| KEY-01 | TBD | Pending |
-| KEY-02 | TBD | Pending |
-| HTTP-01 | TBD | Pending |
-| LAG-01 | TBD | Pending |
-| LAG-02 | TBD | Pending |
-| LAG-03 | TBD | Pending |
+| KEY-01 | Phase 4 | Pending |
+| KEY-02 | Phase 4 | Pending |
+| HTTP-01 | Phase 4 | Pending |
+| LAG-01 | Phase 5 | Pending |
+| LAG-02 | Phase 5 | Pending |
+| LAG-03 | Phase 5 | Pending |
+| E2E-01 | Phase 6 | Pending |
+| E2E-02 | Phase 6 | Pending |
+| E2E-03 | Phase 6 | Pending |
+| REL-01 | Phase 7 | Pending |
+| REL-02 | Phase 7 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 11 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 11 ⚠️
+- Mapped to phases: 11 ✓
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-06-08*
-*Last updated: 2026-06-08 after milestone v1.1 definition*
+*Last updated: 2026-06-08 after roadmap creation (Phases 4–7 assigned)*
