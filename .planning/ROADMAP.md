@@ -25,7 +25,7 @@
 live-published, real-broker-verified, with extended decode + new triage tooling
 — without breaking the v1.0 contract or the read-only guarantee.
 
-- [ ] **Phase 4: Extended Decode & Transport** - Decode message keys via Schema Registry, surface schema_id on KafkaMessage across all four faces, and add HTTP transport entry to server.json
+- [x] **Phase 4: Extended Decode & Transport** - Decode message keys via Schema Registry, surface schema_id on KafkaMessage across all four faces, and add HTTP transport entry to server.json (completed 2026-06-08)
 - [ ] **Phase 5: Consumer Lag Tooling** - New read-only consumer_group_lag tool exposing per-partition lag with Evidence fields, delivered identically across lib / MCP / FastAPI / CLI
 - [ ] **Phase 6: Real-Broker E2E Contour** - Testcontainers integration suite verifying all tools (including v1.1 surfaces) against a live Kafka broker + Schema Registry with real-wire decode
 - [ ] **Phase 7: Release Pipeline** - Verified tag-triggered CI publish workflow + documented RELEASE.md runbook covering PyPI upload and Glama submission steps
@@ -45,7 +45,7 @@ live-published, real-broker-verified, with extended decode + new triage tooling
 Plans:
 - [x] 04-01-PLAN.md — Add raw_key/key_decoded/schema_id fields to KafkaMessage; thread raw_key through confluent_consumer
 - [x] 04-02-PLAN.md — Implement key decode + schema_id extraction in search_service; update all four face serializers
-- [ ] 04-03-PLAN.md — Mount FastMCP /mcp endpoint; declare HTTP transport in server.json remotes and glama.json
+- [x] 04-03-PLAN.md — Mount FastMCP /mcp endpoint; declare HTTP transport in server.json remotes and glama.json
 **UI hint**: no
 
 ### Phase 5: Consumer Lag Tooling
@@ -91,7 +91,7 @@ Plans:
 | 1. Foundation | v1.0 | 4/4 | Complete | 2026-06-05 |
 | 2. Search + Decode | v1.0 | 5/5 | Complete | 2026-06-06 |
 | 3. Native + Ship | v1.0 | 3/3 | Complete | 2026-06-08 |
-| 4. Extended Decode & Transport | v1.1 | 2/3 | In Progress|  |
+| 4. Extended Decode & Transport | v1.1 | 3/3 | Complete   | 2026-06-08 |
 | 5. Consumer Lag Tooling | v1.1 | 0/TBD | Not started | - |
 | 6. Real-Broker E2E Contour | v1.1 | 0/TBD | Not started | - |
 | 7. Release Pipeline | v1.1 | 0/TBD | Not started | - |
