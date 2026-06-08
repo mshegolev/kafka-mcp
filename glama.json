@@ -1,0 +1,42 @@
+{
+  "$schema": "https://glama.ai/mcp/schemas/server.json",
+  "name": "kafka-mcp",
+  "displayName": "Kafka MCP",
+  "description": "Read-only Kafka MCP brick — list topics, describe partitions, search messages by key in a time window, retrieve individual messages. Safe for investigator agents; no offset commits, no produce.",
+  "vendor": "kafka-mcp contributors",
+  "sourceUrl": "https://github.com/OWNER/kafka-mcp",
+  "homepage": "https://github.com/OWNER/kafka-mcp",
+  "license": "MIT",
+  "category": "developer-tools",
+  "tags": ["kafka", "mcp", "messaging", "investigator", "read-only", "observability"],
+  "serverConfig": {
+    "command": "kafka-mcp",
+    "args": ["--stdio"],
+    "transport": "stdio"
+  },
+  "tools": [
+    {
+      "name": "list_topics",
+      "description": "List all topic names visible on the Kafka broker",
+      "readOnlyHint": true
+    },
+    {
+      "name": "describe_topic",
+      "description": "Return partition count, replication factor, and per-partition offsets for a topic",
+      "readOnlyHint": true
+    },
+    {
+      "name": "search_messages",
+      "description": "Scan partitions for messages matching a key (order_id, msisdn, customer_id, product_id) in a time window; returns evidence payloads",
+      "readOnlyHint": true
+    },
+    {
+      "name": "get_message",
+      "description": "Retrieve a single Kafka message by topic, partition, and offset",
+      "readOnlyHint": true
+    }
+  ],
+  "maintainers": [
+    "mshegolev"
+  ]
+}

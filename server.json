@@ -1,0 +1,67 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.OWNER/kafka-mcp",
+  "description": "Read-only Kafka MCP brick — list topics, describe partitions, search messages by key in a time window, retrieve individual messages; safe for investigator agents.",
+  "repository": {
+    "url": "https://github.com/OWNER/kafka-mcp",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "kafka-mcp",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "KAFKA_BOOTSTRAP_SERVERS",
+          "description": "Comma-separated list of Kafka broker addresses, e.g. broker1:9092,broker2:9092",
+          "isRequired": true,
+          "format": "string"
+        },
+        {
+          "name": "KAFKA_SECURITY_PROTOCOL",
+          "description": "Security protocol: PLAINTEXT, SSL, SASL_PLAINTEXT, SASL_SSL",
+          "isRequired": false,
+          "format": "string",
+          "default": "PLAINTEXT"
+        },
+        {
+          "name": "KAFKA_SASL_MECHANISM",
+          "description": "SASL mechanism: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "KAFKA_SASL_USERNAME",
+          "description": "SASL username for broker authentication",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "KAFKA_SASL_PASSWORD",
+          "description": "SASL password for broker authentication",
+          "isRequired": false,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "SCHEMA_REGISTRY_URL",
+          "description": "Confluent Schema Registry URL for Avro/Protobuf/JSON Schema decode",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "KAFKA_SSL_VERIFY",
+          "description": "Verify SSL certificates (true/false). Set to 'false' for self-signed certs.",
+          "isRequired": false,
+          "format": "string",
+          "default": "true"
+        }
+      ]
+    }
+  ]
+}
