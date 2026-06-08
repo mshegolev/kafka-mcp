@@ -54,6 +54,9 @@ class MockKafkaClient:
     Returns deterministic topic and message data without connecting to a broker.
     """
 
+    def close(self) -> None:
+        """No-op close for test compatibility (lifespan teardown)."""
+
     def list_topics(self, include_internal: bool = False) -> list[str]:
         topics = ["orders", "payments"]
         if include_internal:
@@ -1141,3 +1144,60 @@ class TestFourFaceSymmetry:
             assert d["raw_key"] == _EXPECTED_RAW_KEY_B64, f"{face}: raw_key mismatch"
             assert d["key_decoded"] == {"order_id": "ORD-1"}, f"{face}: key_decoded mismatch"
             assert d["schema_id"] == {"value": 5, "key": 5}, f"{face}: schema_id mismatch"
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 Plan 03: FastMCP streamable-HTTP mount at /mcp (HTTP-01)
+# ---------------------------------------------------------------------------
+
+
+class TestHttpMcpMount:
+    """HTTP-01: FastAPI app has a /mcp mount that returns non-404 (HTTP transport)."""
+
+    def test_mcp_mount_returns_non_404(self) -> None:
+        """GET /mcp/ returns a status code that is NOT 404.
+
+        Confirms that the FastMCP streamable-HTTP app is mounted at /mcp
+        on the FastAPI app returned by create_app(). Accepts 200, 405, or
+        any non-404 response — the mount exists and serves MCP.
+        """
+        from starlette.testclient import TestClient
+
+        from kafka_mcp.adapters.inbound.rest_api import create_app
+
+        client_app = create_app(MockKafkaClient())
+        with TestClient(client_app) as tc:
+            resp = tc.get("/mcp/")
+            assert resp.status_code != 404, (
+                f"Expected non-404 at /mcp/ but got {resp.status_code}. "
+                "The FastMCP streamable-HTTP app must be mounted at /mcp."
+            )
+
+    def test_mcp_mount_post_returns_non_404(self) -> None:
+        """POST /mcp/ returns a status code that is NOT 404.
+
+        MCP protocol uses POST for requests; the mount must handle both.
+        """
+        from starlette.testclient import TestClient
+
+        from kafka_mcp.adapters.inbound.rest_api import create_app
+
+        client_app = create_app(MockKafkaClient())
+        with TestClient(client_app) as tc:
+            resp = tc.post("/mcp/", json={})
+            assert resp.status_code != 404, (
+                f"Expected non-404 at POST /mcp/ but got {resp.status_code}."
+            )
+
+    def test_existing_tools_routes_unaffected(self) -> None:
+        """Existing /tools/* routes remain accessible after /mcp mount."""
+        from starlette.testclient import TestClient
+
+        from kafka_mcp.adapters.inbound.rest_api import create_app
+
+        client_app = create_app(MockKafkaClient())
+        with TestClient(client_app) as tc:
+            resp = tc.post("/tools/list_topics", json={})
+            assert resp.status_code == 200, (
+                f"Expected 200 at /tools/list_topics but got {resp.status_code}."
+            )
