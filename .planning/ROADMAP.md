@@ -157,4 +157,4 @@ Plans:
 |-------|----------------|-------------|-----------|
 | 1. Foundation | 4/4 | Complete    | 2026-06-05 |
 | 2. Search + Decode | 5/5 | Complete    | 2026-06-06 |
-| 3. Native + Ship | 3/3 | Complete   | 2026-06-08 |
+| 3. Native + Ship | 3/3 | Complete    | 2026-06-08 |
