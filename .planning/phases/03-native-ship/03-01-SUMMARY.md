@@ -66,10 +66,10 @@ TDD gates followed:
   (ModuleNotFoundError: kafka_mcp.scanner)
 - GREEN commit `8dbe28a`: scanner.py implementation; all 8 tests pass
 
-### Task 2 (auto): EVALUATION.md + PROJECT.md Rust decision
+### Task 2 (auto): EVALUATION.md + PROJECT.md Rust decision — commit ae519fb
 
 `EVALUATION.md` at repo root: all four required sections including `## Rust
-Decision` with actual benchmark numbers (~25-50 ns/msg key-compare, ~446-479
+Decision` with actual benchmark numbers (~48-50 ns/msg key-compare, ~479
 ns/msg with orjson decode), analysis of I/O-bound workload character, and the
 explicit KAFKA-07 gate outcome.
 
@@ -129,7 +129,7 @@ Files created:
 Commits present:
 - `c9fc169` — FOUND (RED test gate)
 - `8dbe28a` — FOUND (GREEN implementation gate)
-- `bca13e8` — FOUND (docs: EVALUATION.md + PROJECT.md)
+- `ae519fb` — FOUND (docs: EVALUATION.md + PROJECT.md KAFKA-07 decision)
 
 Verification:
 - `from kafka_mcp.scanner import scan_partition` — OK (Python 3.10.4, no Rust)
