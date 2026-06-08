@@ -1,9 +1,5 @@
 """pytest-benchmark suite for the pure-Python partition scan/decode hot loop.
 
-Unit tests (always run, no benchmark fixture):
-  - test_scan_partition_pure_python_importable — import guard
-  - test_scan_partition_no_native_fallback — fallback behaviour
-
 Benchmark tests (require pytest-benchmark; skipped when absent):
   - test_benchmark_scan_small    — 100 msgs, 1 match
   - test_benchmark_scan_large    — 10_000 msgs, 10 matches
@@ -11,22 +7,25 @@ Benchmark tests (require pytest-benchmark; skipped when absent):
 
 All benchmarks use pedantic() so the harness controls setup/teardown isolation.
 Benchmarks never assert a latency threshold — they measure only.
+
+The scanner *unit* tests (correctness + native-fallback seam) live in
+``tests/test_scanner.py`` so they run in the default suite and CI; this module
+is module-level ``importorskip``-gated on pytest-benchmark and CI runs it with
+``--ignore=tests/benchmarks`` (WR-01).
 """
 
 from __future__ import annotations
 
-import builtins
-import sys
 from typing import Any
-from unittest.mock import patch
 
 import orjson
 import pytest
 
 # ---------------------------------------------------------------------------
-# Skip guard: if pytest-benchmark is not installed, skip benchmark tests only
+# Skip guard: if pytest-benchmark is not installed, skip the whole module
+# (this module contains only benchmark-fixture tests)
 # ---------------------------------------------------------------------------
-pytest_benchmark = pytest.importorskip(
+pytest.importorskip(
     "pytest_benchmark",
     reason="pytest-benchmark not installed; skipping benchmarks",
 )
@@ -74,76 +73,6 @@ def _make_messages(
             }
         )
     return msgs
-
-
-# ---------------------------------------------------------------------------
-# Unit tests (RED before scanner.py exists)
-# ---------------------------------------------------------------------------
-
-
-def test_scan_partition_pure_python_importable() -> None:
-    """scan_partition must be importable from kafka_mcp.scanner."""
-    # This will raise ImportError (RED) until scanner.py is created.
-    from kafka_mcp.scanner import scan_partition  # noqa: F401
-
-    assert callable(scan_partition)
-
-
-def test_scan_partition_no_native_fallback() -> None:
-    """Even with kafka_mcp._native absent, scan_partition must be callable.
-
-    Monkeypatches builtins.__import__ so that importing kafka_mcp._native
-    raises ImportError, then verifies the seam still exposes scan_partition.
-    """
-    # Remove cached module if previously imported
-    for key in list(sys.modules.keys()):
-        if "kafka_mcp.scanner" in key or "kafka_mcp._native" in key:
-            del sys.modules[key]
-
-    original_import = builtins.__import__
-
-    def _block_native(name: str, *args: Any, **kwargs: Any) -> Any:
-        if name == "kafka_mcp._native":
-            raise ImportError("_native not available (test monkeypatch)")
-        return original_import(name, *args, **kwargs)
-
-    with patch("builtins.__import__", side_effect=_block_native):
-        # Re-import after patching
-        import importlib
-
-        import kafka_mcp.scanner as scanner_mod
-        importlib.reload(scanner_mod)
-        sp = scanner_mod.scan_partition
-
-    assert callable(sp), "scan_partition must be callable without _native"
-
-
-def test_scan_partition_returns_correct_subset() -> None:
-    """scan_partition must return only messages matching target_key."""
-    from kafka_mcp.scanner import scan_partition
-
-    msgs = _make_messages(100, "target-key", match_every=10)
-    result = scan_partition(msgs, "target-key")
-    # Every 10th message matches → indices 0, 10, 20, ..., 90 → 10 matches
-    assert len(result) == 10
-    for item in result:
-        assert item["key"] == "target-key"
-
-
-def test_scan_partition_empty_input() -> None:
-    """scan_partition must return [] for an empty message list."""
-    from kafka_mcp.scanner import scan_partition
-
-    assert scan_partition([], "any-key") == []
-
-
-def test_scan_partition_no_matches() -> None:
-    """scan_partition must return [] when no messages match the key."""
-    from kafka_mcp.scanner import scan_partition
-
-    msgs = _make_messages(50, "target-key", match_every=None)
-    result = scan_partition(msgs, "target-key")
-    assert result == []
 
 
 # ---------------------------------------------------------------------------
