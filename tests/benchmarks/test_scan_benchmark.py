@@ -110,6 +110,7 @@ def test_scan_partition_no_native_fallback() -> None:
     with patch("builtins.__import__", side_effect=_block_native):
         # Re-import after patching
         import importlib
+
         import kafka_mcp.scanner as scanner_mod
         importlib.reload(scanner_mod)
         sp = scanner_mod.scan_partition
