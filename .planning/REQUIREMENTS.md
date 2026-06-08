@@ -78,4 +78,4 @@ Build via maturin; CI wheels via cibuildwheel.
 | KAFKA-02    | 2     | Complete |
 | KAFKA-03    | 2     | Complete |
 | KAFKA-05    | 2     | Complete |
-| KAFKA-07    | 3     | Pending |
+| KAFKA-07    | 3     | Complete |

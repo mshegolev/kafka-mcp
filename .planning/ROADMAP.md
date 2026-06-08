@@ -139,7 +139,7 @@ the brick is published to Glama.
 Plans:
 **Wave 1**
 
-- [ ] 03-01-PLAN.md — Scanner seam + pytest-benchmark suite + EVALUATION.md + Rust decision
+- [x] 03-01-PLAN.md — Scanner seam + pytest-benchmark suite + EVALUATION.md + Rust decision
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -157,4 +157,4 @@ Plans:
 |-------|----------------|-------------|-----------|
 | 1. Foundation | 4/4 | Complete    | 2026-06-05 |
 | 2. Search + Decode | 5/5 | Complete    | 2026-06-06 |
-| 3. Native + Ship | 0/3 | Not started | -      |
+| 3. Native + Ship | 1/3 | In Progress|  |
