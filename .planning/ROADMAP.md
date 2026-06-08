@@ -143,7 +143,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 03-02-PLAN.md — Distribution artifacts: glama.json, server.json, CHANGELOG.md, LICENSE, pyproject.toml metadata
+- [x] 03-02-PLAN.md — Distribution artifacts: glama.json, server.json, CHANGELOG.md, LICENSE, pyproject.toml metadata
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -157,4 +157,4 @@ Plans:
 |-------|----------------|-------------|-----------|
 | 1. Foundation | 4/4 | Complete    | 2026-06-05 |
 | 2. Search + Decode | 5/5 | Complete    | 2026-06-06 |
-| 3. Native + Ship | 1/3 | In Progress|  |
+| 3. Native + Ship | 2/3 | In Progress|  |
