@@ -39,9 +39,13 @@ live-published, real-broker-verified, with extended decode + new triage tooling
 **Success Criteria** (what must be TRUE):
   1. `KafkaClient.get_message()` and `search_messages()` return a decoded key dict when the key is schema-encoded (Avro/Protobuf/JSON via Schema Registry), and fall back to the raw/string key without raising an error when the key is not schema-encoded
   2. `KafkaMessage` carries a `schema_id` field (value schema id, and key schema id when key-decoded); the field appears identically in lib return value, MCP stdio tool response, FastAPI `/tools/*` JSON, and CLI output
-  3. `server.json` declares a streamable-HTTP transport entry whose declared endpoint matches the actual FastAPI route; `python -c "import json,pathlib; d=json.loads(pathlib.Path('server.json').read_text()); assert any(t.get('type')=='http' for t in d['transports'])"` passes
+  3. `server.json` declares a streamable-HTTP transport entry in the `remotes` array whose declared endpoint matches the actual FastAPI `/mcp` route; verified by: `python -c "import json,pathlib; d=json.loads(pathlib.Path('server.json').read_text()); assert any(r.get('type')=='streamable-http' for r in d.get('remotes',[]))"` — NOTE: the real MCP server.json schema uses `remotes` (not `transports`) for streamable-HTTP transports; the original criterion's `d['transports']` assertion is incorrect and has been reconciled here.
   4. The unit test suite passes with no regressions (existing `search_messages` / `get_message` tests for value decoding still green)
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 04-01-PLAN.md — Add raw_key/key_decoded/schema_id fields to KafkaMessage; thread raw_key through confluent_consumer
+- [ ] 04-02-PLAN.md — Implement key decode + schema_id extraction in search_service; update all four face serializers
+- [ ] 04-03-PLAN.md — Mount FastMCP /mcp endpoint; declare HTTP transport in server.json remotes and glama.json
 **UI hint**: no
 
 ### Phase 5: Consumer Lag Tooling
@@ -87,7 +91,7 @@ live-published, real-broker-verified, with extended decode + new triage tooling
 | 1. Foundation | v1.0 | 4/4 | Complete | 2026-06-05 |
 | 2. Search + Decode | v1.0 | 5/5 | Complete | 2026-06-06 |
 | 3. Native + Ship | v1.0 | 3/3 | Complete | 2026-06-08 |
-| 4. Extended Decode & Transport | v1.1 | 0/TBD | Not started | - |
+| 4. Extended Decode & Transport | v1.1 | 0/3 | Not started | - |
 | 5. Consumer Lag Tooling | v1.1 | 0/TBD | Not started | - |
 | 6. Real-Broker E2E Contour | v1.1 | 0/TBD | Not started | - |
 | 7. Release Pipeline | v1.1 | 0/TBD | Not started | - |
