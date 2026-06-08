@@ -43,7 +43,7 @@ live-published, real-broker-verified, with extended decode + new triage tooling
   4. The unit test suite passes with no regressions (existing `search_messages` / `get_message` tests for value decoding still green)
 **Plans**: 3 plans
 Plans:
-- [ ] 04-01-PLAN.md — Add raw_key/key_decoded/schema_id fields to KafkaMessage; thread raw_key through confluent_consumer
+- [x] 04-01-PLAN.md — Add raw_key/key_decoded/schema_id fields to KafkaMessage; thread raw_key through confluent_consumer
 - [ ] 04-02-PLAN.md — Implement key decode + schema_id extraction in search_service; update all four face serializers
 - [ ] 04-03-PLAN.md — Mount FastMCP /mcp endpoint; declare HTTP transport in server.json remotes and glama.json
 **UI hint**: no
@@ -91,7 +91,7 @@ Plans:
 | 1. Foundation | v1.0 | 4/4 | Complete | 2026-06-05 |
 | 2. Search + Decode | v1.0 | 5/5 | Complete | 2026-06-06 |
 | 3. Native + Ship | v1.0 | 3/3 | Complete | 2026-06-08 |
-| 4. Extended Decode & Transport | v1.1 | 0/3 | Not started | - |
+| 4. Extended Decode & Transport | v1.1 | 1/3 | In Progress|  |
 | 5. Consumer Lag Tooling | v1.1 | 0/TBD | Not started | - |
 | 6. Real-Broker E2E Contour | v1.1 | 0/TBD | Not started | - |
 | 7. Release Pipeline | v1.1 | 0/TBD | Not started | - |
