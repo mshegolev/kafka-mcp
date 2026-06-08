@@ -846,3 +846,167 @@ class TestServerCliDispatch:
 
         assert captured.get("args") == [subcommand, "x"]
         mock_uvicorn.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# SC-4 Regression: all four inbound faces × all four Investigator Contract ops
+# ---------------------------------------------------------------------------
+# These tests form the explicit SC-4 regression guard, asserting that:
+#   lib (KafkaClient), MCP stdio, FastAPI REST, and CLI
+#   all expose list_topics, describe_topic, search_messages, get_message.
+# Tests use MockKafkaClient — no live broker required.
+# ---------------------------------------------------------------------------
+
+
+class TestSc4Regression:
+    """SC-4 regression: all four faces deliver all four Investigator Contract ops."""
+
+    # ---- MCP stdio face ----
+
+    def test_sc4_mcp_search_messages(self) -> None:
+        """MCP stdio face: search_messages tool returns list with source='kafka'."""
+        import asyncio
+
+        from kafka_mcp.adapters.inbound.mcp_stdio import create_mcp_server
+
+        server = create_mcp_server(MockKafkaClient())
+        result = asyncio.run(
+            server.call_tool("search_messages", {"key": "ORD-123"})
+        )
+        # FastMCP returns a list of content objects; must be non-empty
+        assert result is not None
+        assert len(result) > 0
+
+    def test_sc4_mcp_get_message(self) -> None:
+        """MCP stdio face: get_message tool returns dict with topic/partition/offset."""
+        import asyncio
+        import json
+
+        from kafka_mcp.adapters.inbound.mcp_stdio import create_mcp_server
+
+        server = create_mcp_server(MockKafkaClient())
+        result = asyncio.run(
+            server.call_tool(
+                "get_message",
+                {"topic": "orders", "partition": 0, "offset": 42},
+            )
+        )
+        assert result is not None
+        assert len(result) > 0
+        # FastMCP encodes the return value in content[0].text as JSON
+        payload = json.loads(result[0].text)
+        assert payload["topic"] == "orders"
+        assert payload["partition"] == 0
+        assert payload["offset"] == 42
+
+    # ---- FastAPI REST face ----
+
+    def test_sc4_fastapi_search_messages(self) -> None:
+        """FastAPI face: POST /tools/search_messages returns 200 + result list."""
+        from fastapi.testclient import TestClient
+
+        from kafka_mcp.adapters.inbound.rest_api import create_app
+
+        client = TestClient(create_app(MockKafkaClient()))
+        response = client.post(
+            "/tools/search_messages",
+            json={"key": "ORD-123"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "result" in data
+        assert isinstance(data["result"], list)
+        assert len(data["result"]) == 1
+        assert data["result"][0]["source"] == "kafka"
+
+    def test_sc4_fastapi_get_message(self) -> None:
+        """FastAPI face: POST /tools/get_message returns 200 + result dict."""
+        from fastapi.testclient import TestClient
+
+        from kafka_mcp.adapters.inbound.rest_api import create_app
+
+        client = TestClient(create_app(MockKafkaClient()))
+        response = client.post(
+            "/tools/get_message",
+            json={"topic": "orders", "partition": 0, "offset": 42},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "result" in data
+        assert data["result"]["topic"] == "orders"
+        assert data["result"]["partition"] == 0
+        assert data["result"]["offset"] == 42
+
+    # ---- CLI face ----
+
+    def test_sc4_cli_search_messages(self, capsys) -> None:
+        """CLI face: run_search_messages with as_json=True outputs topic/key fields."""
+        import orjson
+
+        from kafka_mcp.adapters.inbound.cli import run_search_messages
+
+        run_search_messages(
+            MockKafkaClient(),
+            key="ORD-123",
+            key_field=None,
+            topics=None,
+            time_from_str=None,
+            time_to_str=None,
+            limit=500,
+            as_json=True,
+        )
+        captured = capsys.readouterr()
+        data = orjson.loads(captured.out)
+        assert isinstance(data, list)
+        assert len(data) == 1
+        assert data[0]["topic"] == "orders"
+        assert data[0]["key"] == "ORD-123"
+
+    def test_sc4_cli_get_message(self, capsys) -> None:
+        """CLI face: run_get_message with as_json=True outputs offset field."""
+        import orjson
+
+        from kafka_mcp.adapters.inbound.cli import run_get_message
+
+        run_get_message(
+            MockKafkaClient(),
+            "orders",
+            0,
+            42,
+            as_json=True,
+        )
+        captured = capsys.readouterr()
+        data = orjson.loads(captured.out)
+        assert data["offset"] == 42
+        assert data["topic"] == "orders"
+
+    # ---- lib (KafkaClient) face — all four operations ----
+
+    def test_sc4_lib_all_four_operations(self) -> None:
+        """Lib face: MockKafkaClient exposes all four Investigator Contract operations."""
+        from kafka_mcp.domain.models import KafkaMessage, TopicInfo
+
+        mock = MockKafkaClient()
+
+        # 1. list_topics
+        topics = mock.list_topics()
+        assert isinstance(topics, list)
+        assert len(topics) >= 1
+
+        # 2. describe_topic
+        info = mock.describe_topic("orders")
+        assert isinstance(info, TopicInfo)
+        assert info.name == "orders"
+
+        # 3. search_messages
+        msgs = mock.search_messages(key="ORD-123")
+        assert isinstance(msgs, list)
+        assert len(msgs) == 1
+        assert isinstance(msgs[0], KafkaMessage)
+        assert msgs[0].source == "kafka"
+
+        # 4. get_message
+        msg = mock.get_message(topic="orders", partition=0, offset=42)
+        assert isinstance(msg, KafkaMessage)
+        assert msg.topic == "orders"
+        assert msg.offset == 42
