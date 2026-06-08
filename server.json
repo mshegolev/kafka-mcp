@@ -77,6 +77,32 @@
           "format": "string"
         },
         {
+          "name": "KAFKA_SECURITY_PROTOCOL",
+          "description": "Security protocol: PLAINTEXT, SSL, SASL_PLAINTEXT, SASL_SSL",
+          "isRequired": false,
+          "format": "string",
+          "default": "PLAINTEXT"
+        },
+        {
+          "name": "KAFKA_SASL_MECHANISM",
+          "description": "SASL mechanism: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "KAFKA_SASL_USERNAME",
+          "description": "SASL username for broker authentication",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "KAFKA_SASL_PASSWORD",
+          "description": "SASL password for broker authentication",
+          "isRequired": false,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
           "name": "KAFKA_MCP_HOST",
           "description": "Host to bind the HTTP server (default 127.0.0.1)",
           "isRequired": false,
@@ -95,6 +121,13 @@
           "description": "Confluent Schema Registry URL for decode",
           "isRequired": false,
           "format": "string"
+        },
+        {
+          "name": "KAFKA_SSL_VERIFY",
+          "description": "Verify SSL certificates (true/false)",
+          "isRequired": false,
+          "format": "string",
+          "default": "true"
         }
       ]
     }
