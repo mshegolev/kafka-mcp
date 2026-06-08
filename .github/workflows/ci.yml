@@ -125,9 +125,9 @@ jobs:
   # ---------------------------------------------------------------------------
   # publish: upload pure-Python wheel + sdist to PyPI.
   #
-  # SECURITY (T-03-03-B, T-03-03-C):
-  #   - Triggered ONLY on a tagged release event or manual workflow_dispatch.
-  #     NOT triggered on every push to main.
+  # SECURITY (T-03-03-B, T-03-03-C, WR-01):
+  #   - Triggered ONLY on a published GitHub Release. NOT on push, NOT on
+  #     workflow_dispatch (manual dispatch must not publish an untagged artifact).
   #   - PYPI_TOKEN is read EXCLUSIVELY from GitHub Secrets (${{ secrets.PYPI_TOKEN }}).
   #     The token is NEVER committed to the repository.
   #   - Uses environment: pypi which should have a manual-approval rule in
@@ -138,10 +138,11 @@ jobs:
   publish:
     needs: [build-pure-python]
     runs-on: ubuntu-latest
-    # Publish only on tagged release or explicit workflow_dispatch — never on push.
-    if: >
-      github.event_name == 'release' ||
-      github.event_name == 'workflow_dispatch'
+    # Publish ONLY on a published GitHub Release — never on push and never on
+    # workflow_dispatch (WR-01: manual dispatch from any branch must not push an
+    # arbitrary, untagged artifact to the live PyPI index). workflow_dispatch
+    # still runs tests + build for dry-run validation, just not this publish job.
+    if: github.event_name == 'release'
     # Recommended: configure environment "pypi" with manual-approval rule in
     # GitHub Settings → Environments → pypi.
     environment: pypi
