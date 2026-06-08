@@ -20,7 +20,7 @@
       "description": "Run the HTTP server and connect via MCP streamable-HTTP transport",
       "command": "kafka-mcp",
       "args": [],
-      "transport": "http",
+      "transport": "streamable-http",
       "url": "http://localhost:8000/mcp"
     }
   ],
