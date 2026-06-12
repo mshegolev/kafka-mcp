@@ -78,9 +78,26 @@ jobs:
   # T-03-03-D: Rust toolchain is NEVER silently installed for the pure-Python
   # outcome — the cibuildwheel job is skipped via the if: condition.
   # ---------------------------------------------------------------------------
+  # hashFiles() is a steps-context function and is INVALID in a job-level
+  # `if:` — GitHub rejects the whole workflow file ("workflow file issue",
+  # 0s failure). Detect the Rust seam in a tiny job and gate on its output.
+  detect-native:
+    runs-on: ubuntu-latest
+    outputs:
+      has_native: ${{ steps.check.outputs.has_native }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: |
+          if [ -f native/Cargo.toml ]; then
+            echo "has_native=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_native=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build-wheels:
-    needs: [test]
-    if: ${{ hashFiles('native/Cargo.toml') != '' }}
+    needs: [test, detect-native]
+    if: ${{ needs.detect-native.outputs.has_native == 'true' }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
