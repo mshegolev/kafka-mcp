@@ -7,10 +7,10 @@ last_updated: "2026-06-16T01:00:00.000Z"
 last_activity: 2026-06-16
 progress:
   total_phases: 4
-  completed_phases: 2
-  total_plans: 5
-  completed_plans: 5
-  percent: 50
+  completed_phases: 3
+  total_plans: 7
+  completed_plans: 7
+  percent: 75
 ---
 
 # Project State
@@ -22,16 +22,16 @@ See: .planning/PROJECT.md (updated 2026-06-08)
 **Core value:** Read-only Kafka MCP brick — find events by key in a time window,
 decode Avro/Protobuf/JSON via Schema Registry, surface evidence for incident
 timelines. Library-first: works in pytest without MCP or FastAPI.
-**Current focus:** Phase 06 — Real-Broker E2E Contour
+**Current focus:** Phase 07 — Release Pipeline
 
 ## Current Position
 
-Phase: 06 (Real-Broker E2E Contour) — STARTING
+Phase: 07 (Release Pipeline) — STARTING
 Plan: 0 of TBD
-Status: Phase 5 verified and complete (298 tests, 4/4 SC); starting Phase 6
+Status: Phase 6 verified (25 integration tests, 4/4 SC); starting Phase 7
 Last activity: 2026-06-16
 
-Progress: [█████░░░░░] 50%
+Progress: [███████░░░] 75%
 
 ## Performance Metrics
 

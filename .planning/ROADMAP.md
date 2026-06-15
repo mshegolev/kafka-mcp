@@ -43,8 +43,8 @@ live-published, real-broker-verified, with extended decode + new triage tooling
   4. The v1.1 surfaces are covered by the real-wire suite: key decode (`KEY-01`/`KEY-02`) and consumer lag (`LAG-01`/`LAG-03`) each have at least one integration test that exercises the live broker path
 **Plans**: 2 plans
 Plans:
-- [ ] 06-01-PLAN.md — Testcontainers fixtures (Kafka + SR) + pytest marker + basic connectivity tests (list_topics, describe_topic)
-- [ ] 06-02-PLAN.md — Search/get round-trips + Avro/Protobuf/JSON decode + v1.1 surface tests (key decode, schema_id, consumer_group_lag)
+- [x] 06-01-PLAN.md — Testcontainers fixtures (Kafka + SR) + pytest marker + basic connectivity tests (list_topics, describe_topic)
+- [x] 06-02-PLAN.md — Search/get round-trips + Avro/Protobuf/JSON decode + v1.1 surface tests (key decode, schema_id, consumer_group_lag)
 **UI hint**: no
 
 ### Phase 7: Release Pipeline
@@ -68,5 +68,5 @@ Plans:
 | 3. Native + Ship | v1.0 | 3/3 | Complete | 2026-06-08 |
 | 4. Extended Decode & Transport | v1.1 | 3/3 | Complete   | 2026-06-08 |
 | 5. Consumer Lag Tooling | v1.1 | 2/2 | Complete | 2026-06-16 |
-| 6. Real-Broker E2E Contour | v1.1 | 0/2 | In Progress | - |
+| 6. Real-Broker E2E Contour | v1.1 | 2/2 | Complete | 2026-06-16 |
 | 7. Release Pipeline | v1.1 | 0/TBD | Not started | - |
