@@ -59,7 +59,7 @@ Plans:
 **Plans**: 2 plans
 Plans:
 - [ ] 07-01-PLAN.md — Release CI workflow (release.yml) + RELEASE.md runbook + local hatch build/twine check verification
-- [ ] 07-02-PLAN.md — Update glama.json (add consumer_group_lag tool) + server.json version bump to 1.1.0
+- [x] 07-02-PLAN.md — Update glama.json (add consumer_group_lag tool) + server.json version bump to 1.1.0
 **UI hint**: no
 
 ## Progress
@@ -72,4 +72,4 @@ Plans:
 | 4. Extended Decode & Transport | v1.1 | 3/3 | Complete   | 2026-06-08 |
 | 5. Consumer Lag Tooling | v1.1 | 2/2 | Complete | 2026-06-16 |
 | 6. Real-Broker E2E Contour | v1.1 | 2/2 | Complete | 2026-06-16 |
-| 7. Release Pipeline | v1.1 | 0/2 | Not started | - |
+| 7. Release Pipeline | v1.1 | 1/2 | In Progress|  |

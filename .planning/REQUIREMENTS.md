@@ -18,7 +18,7 @@ Requirements for the v1.1 release. Each maps to exactly one roadmap phase.
   sdist + wheels and publishes to PyPI; the publish step is verified end-to-end
   against TestPyPI (dry-run upload succeeds) so a maintainer's real tag push
   publishes without further code changes.
-- [ ] **REL-02**: A maintainer can register the server on Glama from the
+- [x] **REL-02**: A maintainer can register the server on Glama from the
   in-repo metadata (`glama.json` / `server.json`) following a documented release
   runbook (`RELEASE.md`) that covers tagging, credential/secret setup, and the
   Glama submission steps.
@@ -97,7 +97,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | E2E-02 | Phase 6 | Pending |
 | E2E-03 | Phase 6 | Pending |
 | REL-01 | Phase 7 | Pending |
-| REL-02 | Phase 7 | Pending |
+| REL-02 | Phase 7 | Complete |
 
 **Coverage:**
 - v1.1 requirements: 11 total
