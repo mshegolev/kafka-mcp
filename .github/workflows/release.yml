@@ -1,0 +1,93 @@
+name: Release
+
+# Triggers:
+#   - v* tag push → build + TestPyPI dry-run + gated live PyPI publish
+#   - workflow_dispatch → build + TestPyPI dry-run only (no live publish)
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+# Default: read-only. Only pypi-publish elevates to id-token: write.
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # build: hatch build + twine check — produces sdist + wheel artifacts
+  # ---------------------------------------------------------------------------
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: pip install hatch twine
+
+      - name: Build sdist and wheel
+        run: hatch build
+
+      - name: Validate distribution metadata
+        run: python -m twine check dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-dist
+          path: dist/
+
+  # ---------------------------------------------------------------------------
+  # testpypi-upload: dry-run publish to TestPyPI (runs on both tag + dispatch)
+  # ---------------------------------------------------------------------------
+  testpypi-upload:
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install twine
+        run: pip install twine
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-dist
+          path: dist/
+
+      - name: Upload to TestPyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.TEST_PYPI_TOKEN }}
+        run: python -m twine upload --repository testpypi --skip-existing --verbose dist/*
+
+  # ---------------------------------------------------------------------------
+  # pypi-publish: live PyPI publish — ONLY on tag push, gated by environment
+  #
+  # SECURITY (T-07-01, T-07-03):
+  #   - Condition: tag push only — workflow_dispatch cannot trigger live publish
+  #   - environment: pypi requires manual approval in GitHub repo settings
+  #   - id-token: write granted only to this job (OIDC Trusted Publisher)
+  #   - Token from ${{ secrets.PYPI_TOKEN }} — never hardcoded (T-07-02)
+  # ---------------------------------------------------------------------------
+  pypi-publish:
+    needs: [testpypi-upload]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_TOKEN }}
+          skip-existing: true
