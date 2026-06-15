@@ -75,8 +75,29 @@ class KafkaMessage(BaseModel):
     event_type: str = "kafka_message"
     keys: dict[str, str | None] = Field(
         default_factory=_default_evidence_keys,
-        description=(
-            "Extracted investigator identifiers.  "
-            "Absent identifiers are None."
-        ),
+        description=("Extracted investigator identifiers.  Absent identifiers are None."),
     )
+
+
+class LagRecord(BaseModel):
+    """Per-partition consumer-group lag snapshot.
+
+    Carries the committed-vs-end offset delta for a single partition,
+    plus Investigator-Contract Evidence fields (source, event_type) so
+    each row is usable as a timeline data point (LAG-03).
+
+    ``timestamp_utc`` is the wall-clock UTC time at query execution —
+    lag is a point-in-time snapshot, not a message timestamp.
+    """
+
+    group: str
+    topic: str
+    partition: int
+    current_offset: int
+    end_offset: int
+    lag: int
+    timestamp_utc: datetime
+
+    # --- Investigator Contract Evidence fields ---
+    source: str = "kafka"
+    event_type: str = "consumer_lag"

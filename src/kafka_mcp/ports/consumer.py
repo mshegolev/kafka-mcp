@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 from kafka_mcp.domain.errors import MessageNotFoundError  # noqa: F401  # referenced in docstring
-from kafka_mcp.domain.models import KafkaMessage
+from kafka_mcp.domain.models import KafkaMessage, LagRecord
 
 
 @runtime_checkable
@@ -35,9 +35,7 @@ class ConsumerPort(Protocol):
         """
         ...
 
-    def get_watermark_offsets(
-        self, topic: str, partition: int
-    ) -> tuple[int, int]:
+    def get_watermark_offsets(self, topic: str, partition: int) -> tuple[int, int]:
         """Return (earliest, latest) offsets for the given partition.
 
         Args:
@@ -137,5 +135,24 @@ class ConsumerPort(Protocol):
         Returns:
             Offset of the first message at or after timestamp_ms, or -2
             (OFFSET_BEGINNING) if timestamp_ms is before the earliest message.
+        """
+        ...
+
+    def consumer_group_lag(self, group: str, topics: list[str] | None = None) -> list[LagRecord]:
+        """Return per-partition lag for a consumer group.
+
+        Reads committed offsets via AdminClient and compares against
+        end offsets (high watermarks) to compute lag. Read-only — no
+        offset commits or group joins.
+
+        Args:
+            group: Consumer group ID.
+            topics: Optional list of topic names to filter. When None,
+                reports lag for all topics the group has committed
+                offsets on.
+
+        Returns:
+            List of :class:`LagRecord` objects, one per partition.
+            Empty list when the group has no committed offsets.
         """
         ...

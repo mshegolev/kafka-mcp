@@ -53,9 +53,15 @@ class TestConfluentConsumerAdapterListTopics:
         )
 
         settings = _make_settings()
-        with patch(
-            "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
-            return_value=mock_consumer,
+        with (
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
+                return_value=mock_consumer,
+            ),
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.AdminClient",
+                return_value=MagicMock(),
+            ),
         ):
             return ConfluentConsumerAdapter(settings)
 
@@ -70,9 +76,7 @@ class TestConfluentConsumerAdapterListTopics:
 
     def test_list_topics_include_internal_true(self) -> None:
         mock_consumer = MagicMock()
-        mock_consumer.list_topics.return_value = _make_metadata_mock(
-            ["__consumer_offsets", "payments"]
-        )
+        mock_consumer.list_topics.return_value = _make_metadata_mock(["__consumer_offsets", "payments"])
         adapter = self._make_adapter(mock_consumer)
         result = adapter.list_topics(include_internal=True)
         assert "__consumer_offsets" in result
@@ -81,18 +85,14 @@ class TestConfluentConsumerAdapterListTopics:
     def test_list_topics_default_excludes_internal(self) -> None:
         """list_topics() with no args defaults to include_internal=False."""
         mock_consumer = MagicMock()
-        mock_consumer.list_topics.return_value = _make_metadata_mock(
-            ["__consumer_offsets", "payments"]
-        )
+        mock_consumer.list_topics.return_value = _make_metadata_mock(["__consumer_offsets", "payments"])
         adapter = self._make_adapter(mock_consumer)
         result = adapter.list_topics()
         assert result == ["payments"]
 
     def test_list_topics_returns_sorted(self) -> None:
         mock_consumer = MagicMock()
-        mock_consumer.list_topics.return_value = _make_metadata_mock(
-            ["zebra", "apple", "mango"]
-        )
+        mock_consumer.list_topics.return_value = _make_metadata_mock(["zebra", "apple", "mango"])
         adapter = self._make_adapter(mock_consumer)
         result = adapter.list_topics()
         assert result == ["apple", "mango", "zebra"]
@@ -118,9 +118,15 @@ class TestConfluentConsumerAdapterWatermarks:
         )
 
         settings = _make_settings()
-        with patch(
-            "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
-            return_value=mock_consumer,
+        with (
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
+                return_value=mock_consumer,
+            ),
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.AdminClient",
+                return_value=MagicMock(),
+            ),
         ):
             return ConfluentConsumerAdapter(settings)
 
@@ -146,9 +152,7 @@ class TestConfluentConsumerAdapterWatermarks:
         from kafka_mcp.domain.errors import TopicNotFoundError
 
         mock_consumer = MagicMock()
-        mock_consumer.get_watermark_offsets.side_effect = KafkaException(
-            KafkaError(KafkaError.UNKNOWN_TOPIC_OR_PART)
-        )
+        mock_consumer.get_watermark_offsets.side_effect = KafkaException(KafkaError(KafkaError.UNKNOWN_TOPIC_OR_PART))
         adapter = self._make_adapter(mock_consumer)
         with pytest.raises(TopicNotFoundError) as exc_info:
             adapter.get_watermark_offsets("nonexistent", 0)
@@ -163,9 +167,7 @@ class TestConfluentConsumerAdapterWatermarks:
         from kafka_mcp.domain.errors import TopicNotFoundError
 
         mock_consumer = MagicMock()
-        mock_consumer.get_watermark_offsets.side_effect = KafkaException(
-            KafkaError(KafkaError._UNKNOWN_PARTITION)
-        )
+        mock_consumer.get_watermark_offsets.side_effect = KafkaException(KafkaError(KafkaError._UNKNOWN_PARTITION))
         adapter = self._make_adapter(mock_consumer)
         with pytest.raises(TopicNotFoundError):
             adapter.get_watermark_offsets("payments", 99)
@@ -181,16 +183,12 @@ class TestConfluentConsumerAdapterWatermarks:
         from kafka_mcp.domain.errors import TopicNotFoundError
 
         mock_consumer = MagicMock()
-        mock_consumer.get_watermark_offsets.side_effect = KafkaException(
-            KafkaError(KafkaError._TRANSPORT)
-        )
+        mock_consumer.get_watermark_offsets.side_effect = KafkaException(KafkaError(KafkaError._TRANSPORT))
         adapter = self._make_adapter(mock_consumer)
         with pytest.raises(KafkaException):
             adapter.get_watermark_offsets("payments", 0)
         # And specifically NOT mistranslated to "not found".
-        mock_consumer.get_watermark_offsets.side_effect = KafkaException(
-            KafkaError(KafkaError._TRANSPORT)
-        )
+        mock_consumer.get_watermark_offsets.side_effect = KafkaException(KafkaError(KafkaError._TRANSPORT))
         with pytest.raises(KafkaException):
             try:
                 adapter.get_watermark_offsets("payments", 0)
@@ -213,9 +211,7 @@ class TestConfluentConsumerAdapterWatermarks:
 # ---------------------------------------------------------------------------
 
 
-def _make_topic_metadata(
-    topic: str, *, partitions: list[int] | None = None, error: object = None
-) -> MagicMock:
+def _make_topic_metadata(topic: str, *, partitions: list[int] | None = None, error: object = None) -> MagicMock:
     """Build a list_topics(topic=...) result mock for a single topic.
 
     metadata.topics is dict[str, TopicMetadata-like]; each TopicMetadata has
@@ -243,26 +239,28 @@ class TestConfluentConsumerAdapterGetPartitionIds:
         )
 
         settings = _make_settings()
-        with patch(
-            "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
-            return_value=mock_consumer,
+        with (
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
+                return_value=mock_consumer,
+            ),
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.AdminClient",
+                return_value=MagicMock(),
+            ),
         ):
             return ConfluentConsumerAdapter(settings)
 
     def test_returns_sorted_partition_ids(self) -> None:
         mock_consumer = MagicMock()
-        mock_consumer.list_topics.return_value = _make_topic_metadata(
-            "payments", partitions=[2, 0, 1]
-        )
+        mock_consumer.list_topics.return_value = _make_topic_metadata("payments", partitions=[2, 0, 1])
         adapter = self._make_adapter(mock_consumer)
         assert adapter.get_partition_ids("payments") == [0, 1, 2]
 
     def test_uses_metadata_timeout(self) -> None:
         """WR-03/WR-01: per-topic metadata fetch uses the 10s budget."""
         mock_consumer = MagicMock()
-        mock_consumer.list_topics.return_value = _make_topic_metadata(
-            "payments", partitions=[0]
-        )
+        mock_consumer.list_topics.return_value = _make_topic_metadata("payments", partitions=[0])
         adapter = self._make_adapter(mock_consumer)
         adapter.get_partition_ids("payments")
         _args, kwargs = mock_consumer.list_topics.call_args
@@ -325,9 +323,15 @@ class TestConfluentConsumerAdapterContextManager:
 
         mock_consumer = MagicMock()
         settings = _make_settings()
-        with patch(
-            "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
-            return_value=mock_consumer,
+        with (
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
+                return_value=mock_consumer,
+            ),
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.AdminClient",
+                return_value=MagicMock(),
+            ),
         ):
             adapter = ConfluentConsumerAdapter(settings)
 
@@ -344,9 +348,15 @@ class TestConfluentConsumerAdapterContextManager:
 
         mock_consumer = MagicMock()
         settings = _make_settings()
-        with patch(
-            "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
-            return_value=mock_consumer,
+        with (
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
+                return_value=mock_consumer,
+            ),
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.AdminClient",
+                return_value=MagicMock(),
+            ),
         ):
             adapter = ConfluentConsumerAdapter(settings)
 
@@ -372,9 +382,15 @@ class TestConfluentConsumerAdapterProtocol:
 
         mock_consumer = MagicMock()
         settings = _make_settings()
-        with patch(
-            "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
-            return_value=mock_consumer,
+        with (
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
+                return_value=mock_consumer,
+            ),
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.AdminClient",
+                return_value=MagicMock(),
+            ),
         ):
             adapter = ConfluentConsumerAdapter(settings)
 
@@ -388,14 +404,9 @@ class TestConfluentConsumerAdapterProtocol:
 
         source = inspect.getsource(confluent_consumer)
         non_comment_lines = [
-            line
-            for line in source.splitlines()
-            if "subscribe" in line and not line.strip().startswith("#")
+            line for line in source.splitlines() if "subscribe" in line and not line.strip().startswith("#")
         ]
-        assert non_comment_lines == [], (
-            f"subscribe() found in adapter source (KAFKA-06 violation): "
-            f"{non_comment_lines}"
-        )
+        assert non_comment_lines == [], f"subscribe() found in adapter source (KAFKA-06 violation): {non_comment_lines}"
 
 
 # ---------------------------------------------------------------------------
@@ -418,9 +429,15 @@ class TestConfluentConsumerAdapterConfig:
             return MagicMock()
 
         settings = _make_settings()
-        with patch(
-            "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
-            side_effect=fake_consumer,
+        with (
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
+                side_effect=fake_consumer,
+            ),
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.AdminClient",
+                return_value=MagicMock(),
+            ),
         ):
             ConfluentConsumerAdapter(settings)
 
@@ -438,16 +455,20 @@ class TestConfluentConsumerAdapterConfig:
             return MagicMock()
 
         settings = _make_settings()
-        with patch(
-            "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
-            side_effect=fake_consumer,
+        with (
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
+                side_effect=fake_consumer,
+            ),
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.AdminClient",
+                return_value=MagicMock(),
+            ),
         ):
             ConfluentConsumerAdapter(settings)
 
         group_id = captured_conf.get("group.id", "")
-        assert group_id.startswith("kafka-mcp-ro-"), (
-            f"group.id '{group_id}' does not start with 'kafka-mcp-ro-'"
-        )
+        assert group_id.startswith("kafka-mcp-ro-"), f"group.id '{group_id}' does not start with 'kafka-mcp-ro-'"
 
     def test_group_id_is_unique_per_instance(self) -> None:
         from kafka_mcp.adapters.outbound.confluent_consumer import (
@@ -461,16 +482,20 @@ class TestConfluentConsumerAdapterConfig:
             return MagicMock()
 
         settings = _make_settings()
-        with patch(
-            "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
-            side_effect=fake_consumer,
+        with (
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
+                side_effect=fake_consumer,
+            ),
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.AdminClient",
+                return_value=MagicMock(),
+            ),
         ):
             ConfluentConsumerAdapter(settings)
             ConfluentConsumerAdapter(settings)
 
-        assert group_ids[0] != group_ids[1], (
-            "group.id must be unique per instantiation (uuid4)"
-        )
+        assert group_ids[0] != group_ids[1], "group.id must be unique per instantiation (uuid4)"
 
     def test_ssl_only_omits_sasl_keys(self) -> None:
         """TLS-only (SSL, no mechanism) must not inject any sasl.* keys.
@@ -489,12 +514,16 @@ class TestConfluentConsumerAdapterConfig:
             captured_conf.update(conf)
             return MagicMock()
 
-        settings = KafkaMcpSettings(
-            bootstrap_servers="localhost:9092", security_protocol="SSL"
-        )
-        with patch(
-            "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
-            side_effect=fake_consumer,
+        settings = KafkaMcpSettings(bootstrap_servers="localhost:9092", security_protocol="SSL")
+        with (
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
+                side_effect=fake_consumer,
+            ),
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.AdminClient",
+                return_value=MagicMock(),
+            ),
         ):
             ConfluentConsumerAdapter(settings)
 
@@ -523,9 +552,15 @@ class TestConfluentConsumerAdapterConfig:
             sasl_username="alice",
             sasl_password="secret",
         )
-        with patch(
-            "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
-            side_effect=fake_consumer,
+        with (
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
+                side_effect=fake_consumer,
+            ),
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.AdminClient",
+                return_value=MagicMock(),
+            ),
         ):
             ConfluentConsumerAdapter(settings)
 
@@ -568,17 +603,13 @@ class TestConfluentConsumerAdapterConfig:
         )
         from kafka_mcp.config import KafkaMcpSettings
 
-        settings = KafkaMcpSettings(
-            bootstrap_servers="localhost:9092", **kwargs
-        )
+        settings = KafkaMcpSettings(bootstrap_servers="localhost:9092", **kwargs)
 
         try:
             # No mock: this exercises librdkafka's real config validation.
             ConfluentConsumerAdapter(settings)
         except KafkaException as exc:  # pragma: no cover - regression guard
-            pytest.fail(
-                f"librdkafka rejected a valid conf {kwargs}: {exc}"
-            )
+            pytest.fail(f"librdkafka rejected a valid conf {kwargs}: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -796,9 +827,7 @@ class TestSchemaRegistryDecodeAvro:
         assert mock_client.get_schema.call_count == 1
 
 
-def _build_protobuf_payload(
-    proto_src: str, message_name: str, fields: dict, schema_id: int = 123
-) -> bytes:
+def _build_protobuf_payload(proto_src: str, message_name: str, fields: dict, schema_id: int = 123) -> bytes:
     """Compile ``proto_src`` with protoc, serialize a message, and wrap it in
     Confluent Protobuf framing (magic + schema_id + 0x00 index + payload).
 
@@ -866,15 +895,12 @@ def _grpc_tools_available() -> bool:
 class TestSchemaRegistryDecodeProtobuf:
     """Confluent-framed Protobuf payloads decoded via in-process grpc_tools."""
 
-    _PROTO_SRC = (
-        "syntax = \"proto3\";\n"
-        "message Person { string msisdn = 1; int32 age = 2; }\n"
-    )
+    _PROTO_SRC = 'syntax = "proto3";\nmessage Person { string msisdn = 1; int32 age = 2; }\n'
 
     # WR-05: a schema with snake_case fields, an int64, and a nested message,
     # to lock in preserving_proto_field_name=True (snake_case + nested paths).
     _PROTO_SRC_NESTED = (
-        "syntax = \"proto3\";\n"
+        'syntax = "proto3";\n'
         "message Order {\n"
         "  message Payload { int64 order_id = 1; string product_name = 2; }\n"
         "  int64 customer_id = 1;\n"
@@ -890,16 +916,12 @@ class TestSchemaRegistryDecodeProtobuf:
         protobuf payload. This asserts that path is gone: a real payload now
         decodes without any AttributeError.
         """
-        raw = _build_protobuf_payload(
-            self._PROTO_SRC, "Person", {"msisdn": "79001234567", "age": 7}
-        )
+        raw = _build_protobuf_payload(self._PROTO_SRC, "Person", {"msisdn": "79001234567", "age": 7})
         schema = _mock_schema("PROTOBUF", schema_str=self._PROTO_SRC)
         mock_client = MagicMock()
         mock_client.get_schema.return_value = schema
 
-        with patch(
-            _ADAPTER_MOD + ".SchemaRegistryClient", return_value=mock_client
-        ):
+        with patch(_ADAPTER_MOD + ".SchemaRegistryClient", return_value=mock_client):
             adapter = _make_sr_adapter()
             # Must NOT raise AttributeError (the CR-01 defect).
             result = adapter.decode(raw, topic="people", partition=0, offset=0)
@@ -907,16 +929,12 @@ class TestSchemaRegistryDecodeProtobuf:
 
     def test_decode_magic_byte_protobuf_roundtrip(self) -> None:
         """Real Confluent-framed PROTOBUF payload → generic decode to dict."""
-        raw = _build_protobuf_payload(
-            self._PROTO_SRC, "Person", {"msisdn": "79001234567", "age": 42}
-        )
+        raw = _build_protobuf_payload(self._PROTO_SRC, "Person", {"msisdn": "79001234567", "age": 42})
         schema = _mock_schema("PROTOBUF", schema_str=self._PROTO_SRC)
         mock_client = MagicMock()
         mock_client.get_schema.return_value = schema
 
-        with patch(
-            _ADAPTER_MOD + ".SchemaRegistryClient", return_value=mock_client
-        ):
+        with patch(_ADAPTER_MOD + ".SchemaRegistryClient", return_value=mock_client):
             adapter = _make_sr_adapter()
             result = adapter.decode(raw)
         assert result == {"msisdn": "79001234567", "age": 42}
@@ -968,9 +986,7 @@ class TestSchemaRegistryDecodeProtobuf:
         fd = None
         for f in fds.file:
             fd = pool.Add(f)
-        order_cls = message_factory.GetMessageClass(
-            fd.message_types_by_name["Order"]
-        )
+        order_cls = message_factory.GetMessageClass(fd.message_types_by_name["Order"])
         order = order_cls()
         order.customer_id = 7000000000  # int64 > 2**31, exercises int64 mapping
         order.payload.order_id = 9000000001
@@ -982,9 +998,7 @@ class TestSchemaRegistryDecodeProtobuf:
         mock_client = MagicMock()
         mock_client.get_schema.return_value = schema
 
-        with patch(
-            _ADAPTER_MOD + ".SchemaRegistryClient", return_value=mock_client
-        ):
+        with patch(_ADAPTER_MOD + ".SchemaRegistryClient", return_value=mock_client):
             adapter = _make_sr_adapter()
             result = adapter.decode(raw)
 
@@ -1068,9 +1082,7 @@ class TestSchemaRegistryAdapterSecurity:
 
         secret = "super-secret-password-xyz"
         with patch(_ADAPTER_MOD + ".SchemaRegistryClient"):
-            adapter = SchemaRegistryHttpAdapter(
-                url="http://sr:8081", user="alice", password=secret
-            )
+            adapter = SchemaRegistryHttpAdapter(url="http://sr:8081", user="alice", password=secret)
         assert secret not in repr(adapter)
         assert secret not in str(adapter)
 
@@ -1088,9 +1100,15 @@ def _make_consumer_adapter(mock_consumer: MagicMock) -> object:
     from kafka_mcp.config import KafkaMcpSettings
 
     settings = KafkaMcpSettings(bootstrap_servers="localhost:9092")
-    with patch(
-        "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
-        return_value=mock_consumer,
+    with (
+        patch(
+            "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
+            return_value=mock_consumer,
+        ),
+        patch(
+            "kafka_mcp.adapters.outbound.confluent_consumer.AdminClient",
+            return_value=MagicMock(),
+        ),
     ):
         return ConfluentConsumerAdapter(settings)
 
@@ -1198,13 +1216,9 @@ class TestFetchMessages:
 
         mock_consumer = MagicMock()
         # msg0: at 1000s — strictly within time_to of 1500s
-        msg0 = _make_msg_mock(
-            offset=0, timestamp_type=1, timestamp_ms=1_000_000
-        )
+        msg0 = _make_msg_mock(offset=0, timestamp_type=1, timestamp_ms=1_000_000)
         # msg1: at exactly 1500s — equals time_to → excluded (exclusive bound)
-        msg1 = _make_msg_mock(
-            offset=1, timestamp_type=1, timestamp_ms=1_500_000
-        )
+        msg1 = _make_msg_mock(offset=1, timestamp_type=1, timestamp_ms=1_500_000)
         mock_consumer.poll.side_effect = [msg0, msg1, None]
         adapter = _make_consumer_adapter(mock_consumer)
 
@@ -1232,17 +1246,11 @@ class TestFetchMessages:
         from datetime import datetime, timezone
 
         mock_consumer = MagicMock()
-        msg0 = _make_msg_mock(
-            offset=0, timestamp_type=1, timestamp_ms=1_000_000
-        )
+        msg0 = _make_msg_mock(offset=0, timestamp_type=1, timestamp_ms=1_000_000)
         # offset 1 is out of window (future-dated) — must be skipped, not break
-        msg1 = _make_msg_mock(
-            offset=1, timestamp_type=1, timestamp_ms=9_000_000
-        )
+        msg1 = _make_msg_mock(offset=1, timestamp_type=1, timestamp_ms=9_000_000)
         # offset 2 is back in window — must still be returned
-        msg2 = _make_msg_mock(
-            offset=2, timestamp_type=1, timestamp_ms=1_200_000
-        )
+        msg2 = _make_msg_mock(offset=2, timestamp_type=1, timestamp_ms=1_200_000)
         mock_consumer.poll.side_effect = [msg0, msg1, msg2, None]
         adapter = _make_consumer_adapter(mock_consumer)
 
@@ -1266,9 +1274,7 @@ class TestFetchMessages:
         mock_consumer = MagicMock()
         # 1_700_000_000_000 ms = epoch 1_700_000_000 s
         ts_ms = 1_700_000_000_000
-        msg0 = _make_msg_mock(
-            offset=0, timestamp_type=1, timestamp_ms=ts_ms
-        )
+        msg0 = _make_msg_mock(offset=0, timestamp_type=1, timestamp_ms=ts_ms)
         mock_consumer.poll.side_effect = [msg0, None]
         adapter = _make_consumer_adapter(mock_consumer)
 
@@ -1291,9 +1297,7 @@ class TestFetchMessages:
         """TIMESTAMP_LOG_APPEND_TIME → timestamp_utc still set (fallback path)."""
         mock_consumer = MagicMock()
         # timestamp_type=2 is TIMESTAMP_LOG_APPEND_TIME
-        msg0 = _make_msg_mock(
-            offset=0, timestamp_type=2, timestamp_ms=1_000_000_000
-        )
+        msg0 = _make_msg_mock(offset=0, timestamp_type=2, timestamp_ms=1_000_000_000)
         mock_consumer.poll.side_effect = [msg0, None]
         adapter = _make_consumer_adapter(mock_consumer)
 
@@ -1328,9 +1332,15 @@ class TestFetchMessages:
             bootstrap_servers="localhost:9092",
             max_scan=5,
         )
-        with patch(
-            "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
-            return_value=mock_consumer,
+        with (
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
+                return_value=mock_consumer,
+            ),
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.AdminClient",
+                return_value=MagicMock(),
+            ),
         ):
             adapter = ConfluentConsumerAdapter(settings)
 
@@ -1439,9 +1449,7 @@ class TestFetchMessage:
         adapter = _make_consumer_adapter(mock_consumer)
 
         with pytest.raises(MessageNotFoundError) as exc_info:
-            adapter.fetch_message(
-                topic="events", partition=2, offset=999
-            )
+            adapter.fetch_message(topic="events", partition=2, offset=999)
 
         err = exc_info.value
         assert err.topic == "events"
@@ -1584,9 +1592,7 @@ class TestFetchMessageRawKey:
         mock_consumer.poll.return_value = msg
         adapter = _make_consumer_adapter(mock_consumer)
 
-        result = adapter.fetch_message(
-            topic="payments", partition=0, offset=10
-        )
+        result = adapter.fetch_message(topic="payments", partition=0, offset=10)
 
         assert result.raw_key == raw_key_bytes
 
@@ -1602,8 +1608,187 @@ class TestFetchMessageRawKey:
         mock_consumer.poll.return_value = msg
         adapter = _make_consumer_adapter(mock_consumer)
 
-        result = adapter.fetch_message(
-            topic="payments", partition=0, offset=10
-        )
+        result = adapter.fetch_message(topic="payments", partition=0, offset=10)
 
         assert result.raw_key is None
+
+
+# ---------------------------------------------------------------------------
+# ConfluentConsumerAdapter — consumer_group_lag (Phase 5 Plan 01)
+# ---------------------------------------------------------------------------
+
+
+def _make_tp_mock(topic: str, partition: int, offset: int, error: object = None) -> MagicMock:
+    """Build a mock TopicPartition for AdminClient offset results."""
+    tp = MagicMock()
+    tp.topic = topic
+    tp.partition = partition
+    tp.offset = offset
+    tp.error = error
+    return tp
+
+
+class TestConfluentConsumerAdapterLag:
+    """consumer_group_lag: reads committed offsets via AdminClient, computes lag."""
+
+    def _make_adapter(self, mock_consumer: MagicMock, mock_admin: MagicMock) -> object:
+        from kafka_mcp.adapters.outbound.confluent_consumer import (
+            ConfluentConsumerAdapter,
+        )
+
+        settings = _make_settings()
+        with (
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
+                return_value=mock_consumer,
+            ),
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.AdminClient",
+                return_value=mock_admin,
+            ),
+        ):
+            return ConfluentConsumerAdapter(settings)
+
+    def _mock_admin_offsets(self, mock_admin: MagicMock, group: str, tps: list[MagicMock]) -> None:
+        """Configure mock_admin.list_consumer_group_offsets to return tps."""
+        group_result = MagicMock()
+        group_result.topic_partitions = tps
+        future = MagicMock()
+        future.result.return_value = group_result
+        mock_admin.list_consumer_group_offsets.return_value = {group: future}
+
+    def test_consumer_group_lag_returns_lag_records(self) -> None:
+        """Two partitions with committed offsets → 2 LagRecords with correct lag."""
+        from kafka_mcp.domain.models import LagRecord
+
+        mock_consumer = MagicMock()
+        mock_admin = MagicMock()
+        adapter = self._make_adapter(mock_consumer, mock_admin)
+
+        tps = [
+            _make_tp_mock("orders", 0, 50),
+            _make_tp_mock("orders", 1, 30),
+        ]
+        self._mock_admin_offsets(mock_admin, "my-group", tps)
+
+        # Mock get_watermark_offsets on the consumer (adapter delegates to it)
+        mock_consumer.get_watermark_offsets.return_value = (0, 100)
+
+        result = adapter.consumer_group_lag("my-group")
+
+        assert len(result) == 2
+        assert all(isinstance(r, LagRecord) for r in result)
+
+        # Sort by partition for deterministic assertion
+        result.sort(key=lambda r: r.partition)
+        assert result[0].partition == 0
+        assert result[0].current_offset == 50
+        assert result[0].end_offset == 100
+        assert result[0].lag == 50
+        assert result[1].partition == 1
+        assert result[1].current_offset == 30
+        assert result[1].end_offset == 100
+        assert result[1].lag == 70
+
+    def test_consumer_group_lag_no_committed_offset(self) -> None:
+        """Partition with offset=-1001 (OFFSET_INVALID) → current_offset=0, lag=end_offset."""
+        mock_consumer = MagicMock()
+        mock_admin = MagicMock()
+        adapter = self._make_adapter(mock_consumer, mock_admin)
+
+        tps = [_make_tp_mock("orders", 0, -1001)]
+        self._mock_admin_offsets(mock_admin, "my-group", tps)
+        mock_consumer.get_watermark_offsets.return_value = (0, 200)
+
+        result = adapter.consumer_group_lag("my-group")
+
+        assert len(result) == 1
+        assert result[0].current_offset == 0
+        assert result[0].end_offset == 200
+        assert result[0].lag == 200
+
+    def test_consumer_group_lag_empty_group(self) -> None:
+        """AdminClient raises KafkaException → empty list returned."""
+        from confluent_kafka import KafkaException
+
+        mock_consumer = MagicMock()
+        mock_admin = MagicMock()
+        adapter = self._make_adapter(mock_consumer, mock_admin)
+
+        future = MagicMock()
+        future.result.side_effect = KafkaException(MagicMock(code=MagicMock(return_value=-1)))
+        mock_admin.list_consumer_group_offsets.return_value = {"nonexistent": future}
+
+        result = adapter.consumer_group_lag("nonexistent")
+        assert result == []
+
+    def test_consumer_group_lag_topics_filter(self) -> None:
+        """topics=["orders"] → only "orders" partitions returned, "payments" excluded."""
+        mock_consumer = MagicMock()
+        mock_admin = MagicMock()
+        adapter = self._make_adapter(mock_consumer, mock_admin)
+
+        tps = [
+            _make_tp_mock("orders", 0, 50),
+            _make_tp_mock("payments", 0, 10),
+        ]
+        self._mock_admin_offsets(mock_admin, "my-group", tps)
+        mock_consumer.get_watermark_offsets.return_value = (0, 100)
+
+        result = adapter.consumer_group_lag("my-group", topics=["orders"])
+
+        assert len(result) == 1
+        assert result[0].topic == "orders"
+
+    def test_consumer_group_lag_topics_none_returns_all(self) -> None:
+        """topics=None → all committed topics returned."""
+        mock_consumer = MagicMock()
+        mock_admin = MagicMock()
+        adapter = self._make_adapter(mock_consumer, mock_admin)
+
+        tps = [
+            _make_tp_mock("orders", 0, 50),
+            _make_tp_mock("payments", 0, 10),
+        ]
+        self._mock_admin_offsets(mock_admin, "my-group", tps)
+        mock_consumer.get_watermark_offsets.return_value = (0, 100)
+
+        result = adapter.consumer_group_lag("my-group", topics=None)
+
+        topics_returned = {r.topic for r in result}
+        assert topics_returned == {"orders", "payments"}
+
+    def test_consumer_group_lag_evidence_fields(self) -> None:
+        """Each LagRecord has source='kafka' and event_type='consumer_lag'."""
+        mock_consumer = MagicMock()
+        mock_admin = MagicMock()
+        adapter = self._make_adapter(mock_consumer, mock_admin)
+
+        tps = [_make_tp_mock("orders", 0, 50)]
+        self._mock_admin_offsets(mock_admin, "my-group", tps)
+        mock_consumer.get_watermark_offsets.return_value = (0, 100)
+
+        result = adapter.consumer_group_lag("my-group")
+
+        assert len(result) == 1
+        assert result[0].source == "kafka"
+        assert result[0].event_type == "consumer_lag"
+
+    def test_consumer_group_lag_timestamp_utc_is_utc_aware(self) -> None:
+        """timestamp_utc has tzinfo set to UTC."""
+        from datetime import timezone
+
+        mock_consumer = MagicMock()
+        mock_admin = MagicMock()
+        adapter = self._make_adapter(mock_consumer, mock_admin)
+
+        tps = [_make_tp_mock("orders", 0, 50)]
+        self._mock_admin_offsets(mock_admin, "my-group", tps)
+        mock_consumer.get_watermark_offsets.return_value = (0, 100)
+
+        result = adapter.consumer_group_lag("my-group")
+
+        assert len(result) == 1
+        ts = result[0].timestamp_utc
+        assert ts.tzinfo is not None
+        assert ts.tzinfo == timezone.utc

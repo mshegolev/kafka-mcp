@@ -95,9 +95,7 @@ class TestConsumerPort:
             def list_topics(self, include_internal: bool = False) -> list[str]:
                 return []
 
-            def get_watermark_offsets(
-                self, topic: str, partition: int
-            ) -> tuple[int, int]:
+            def get_watermark_offsets(self, topic: str, partition: int) -> tuple[int, int]:
                 return (0, 0)
 
             def get_partition_ids(self, topic: str) -> list[int]:
@@ -114,15 +112,14 @@ class TestConsumerPort:
             ) -> list:
                 return []
 
-            def fetch_message(
-                self, topic: str, partition: int, offset: int
-            ) -> object:
+            def fetch_message(self, topic: str, partition: int, offset: int) -> object:
                 raise NotImplementedError
 
-            def offsets_for_times(
-                self, topic: str, partition: int, timestamp_ms: int
-            ) -> int:
+            def offsets_for_times(self, topic: str, partition: int, timestamp_ms: int) -> int:
                 return 0
+
+            def consumer_group_lag(self, group: str, topics: list[str] | None = None) -> list:
+                return []
 
         assert isinstance(MockConsumer(), ConsumerPort)
 
@@ -170,9 +167,7 @@ class TestSchemaRegistryPort:
 
 
 class TestKafkaMcpSettings:
-    def test_missing_bootstrap_servers_raises_config_error(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_missing_bootstrap_servers_raises_config_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("KAFKA_MCP_BOOTSTRAP_SERVERS", raising=False)
         # Ensure no .env file provides it in test context
         from kafka_mcp.config import KafkaMcpSettings
@@ -183,9 +178,7 @@ class TestKafkaMcpSettings:
         # when bootstrap_servers is absent
         assert exc_info.value is not None
 
-    def test_defaults_when_bootstrap_servers_provided(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_defaults_when_bootstrap_servers_provided(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("KAFKA_MCP_BOOTSTRAP_SERVERS", "localhost:9092")
         monkeypatch.delenv("KAFKA_MCP_SECURITY_PROTOCOL", raising=False)
         monkeypatch.delenv("KAFKA_MCP_MAX_SCAN", raising=False)
@@ -199,9 +192,7 @@ class TestKafkaMcpSettings:
         assert settings.max_scan == 100_000
         assert settings.poll_timeout == 1.0
 
-    def test_sasl_fields_accepted(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_sasl_fields_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("KAFKA_MCP_BOOTSTRAP_SERVERS", "broker:9093")
         monkeypatch.setenv("KAFKA_MCP_SECURITY_PROTOCOL", "SASL_SSL")
         monkeypatch.setenv("KAFKA_MCP_SASL_MECHANISM", "PLAIN")
@@ -216,13 +207,9 @@ class TestKafkaMcpSettings:
         # Password stored as SecretStr — .get_secret_value() to access
         assert s.sasl_password is not None
 
-    def test_schema_registry_fields_accepted(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_schema_registry_fields_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("KAFKA_MCP_BOOTSTRAP_SERVERS", "broker:9092")
-        monkeypatch.setenv(
-            "KAFKA_MCP_SCHEMA_REGISTRY_URL", "http://sr:8081"
-        )
+        monkeypatch.setenv("KAFKA_MCP_SCHEMA_REGISTRY_URL", "http://sr:8081")
         monkeypatch.setenv("KAFKA_MCP_SR_USER", "sr-user")
         monkeypatch.setenv("KAFKA_MCP_SR_PASS", "sr-pass")
 
@@ -233,9 +220,7 @@ class TestKafkaMcpSettings:
         assert s.sr_user == "sr-user"
         assert s.sr_pass is not None
 
-    def test_empty_bootstrap_servers_raises_config_error(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_empty_bootstrap_servers_raises_config_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("KAFKA_MCP_BOOTSTRAP_SERVERS", "   ")
 
         from kafka_mcp.config import KafkaMcpSettings
@@ -243,9 +228,7 @@ class TestKafkaMcpSettings:
         with pytest.raises(ConfigError):
             KafkaMcpSettings(_env_file=None)  # type: ignore[call-arg]
 
-    def test_secret_str_not_exposed_in_repr(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_secret_str_not_exposed_in_repr(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("KAFKA_MCP_BOOTSTRAP_SERVERS", "broker:9092")
         monkeypatch.setenv("KAFKA_MCP_SASL_PASSWORD", "topsecret")
         monkeypatch.setenv("KAFKA_MCP_SR_PASS", "sr-secret")
@@ -334,9 +317,7 @@ class TestDecodeError:
     def test_decode_error_is_domain_exception(self) -> None:
         from kafka_mcp.domain.errors import DecodeError
 
-        err = DecodeError(
-            topic="payments", partition=0, offset=10, reason="unknown magic byte"
-        )
+        err = DecodeError(topic="payments", partition=0, offset=10, reason="unknown magic byte")
         assert isinstance(err, Exception)
         assert not isinstance(err, ValueError)
 
@@ -393,9 +374,7 @@ class TestHexagonalBoundary:
             capture_output=True,
             text=True,
         )
-        assert result.stdout.strip() == "", (
-            f"Hexagonal boundary violated in domain/:\n{result.stdout}"
-        )
+        assert result.stdout.strip() == "", f"Hexagonal boundary violated in domain/:\n{result.stdout}"
 
 
 # ---------------------------------------------------------------------------
@@ -409,9 +388,7 @@ class MockConsumer:
     def list_topics(self, include_internal: bool = False) -> list[str]:
         return []
 
-    def get_watermark_offsets(
-        self, topic: str, partition: int
-    ) -> tuple[int, int]:
+    def get_watermark_offsets(self, topic: str, partition: int) -> tuple[int, int]:
         return (0, 0)
 
     def get_partition_ids(self, topic: str) -> list[int]:
@@ -433,10 +410,11 @@ class MockConsumer:
 
         raise MessageNotFoundError(topic=topic, partition=partition, offset=offset)
 
-    def offsets_for_times(
-        self, topic: str, partition: int, timestamp_ms: int
-    ) -> int:
+    def offsets_for_times(self, topic: str, partition: int, timestamp_ms: int) -> int:
         return 0
+
+    def consumer_group_lag(self, group: str, topics: list[str] | None = None) -> list:
+        return []
 
 
 class MockSchemaRegistry:
@@ -735,6 +713,9 @@ class TestSearchMessagesKeyDecode:
         def fetch_message(self, topic, partition, offset):  # type: ignore[no-untyped-def]
             return self._msg
 
+        def consumer_group_lag(self, group, topics=None):  # type: ignore[no-untyped-def]
+            return []
+
     def test_search_framed_key_populates_key_decoded(self) -> None:
         from kafka_mcp.domain.search_service import TopicService
 
@@ -875,6 +856,9 @@ class TestGetMessageKeyDecode:
 
         def fetch_message(self, topic, partition, offset):  # type: ignore[no-untyped-def]
             return self._msg
+
+        def consumer_group_lag(self, group, topics=None):  # type: ignore[no-untyped-def]
+            return []
 
     def test_get_message_framed_key_populates_key_decoded(self) -> None:
         from kafka_mcp.domain.search_service import TopicService

@@ -20,7 +20,15 @@ from datetime import datetime, timezone
 from types import TracebackType
 from uuid import uuid4
 
-from confluent_kafka import TIMESTAMP_CREATE_TIME, Consumer, KafkaError, KafkaException, TopicPartition
+from confluent_kafka import (
+    TIMESTAMP_CREATE_TIME,
+    Consumer,
+    ConsumerGroupTopicPartitions,
+    KafkaError,
+    KafkaException,
+    TopicPartition,
+)
+from confluent_kafka.admin import AdminClient
 
 from kafka_mcp.config import KafkaMcpSettings
 from kafka_mcp.domain.errors import (
@@ -28,7 +36,7 @@ from kafka_mcp.domain.errors import (
     TopicNotFoundError,
     TransientError,
 )
-from kafka_mcp.domain.models import KafkaMessage
+from kafka_mcp.domain.models import KafkaMessage, LagRecord
 
 # Synchronous broker metadata round-trips (list_topics, watermark fetch)
 # use a generous fixed budget. This is deliberately NOT poll_timeout, which
@@ -85,6 +93,22 @@ class ConfluentConsumerAdapter:
 
         self._consumer: Consumer = Consumer(conf)
 
+        # AdminClient for read-only admin queries (consumer_group_lag).
+        # Reuses the same broker/SASL config; consumer-specific keys
+        # (enable.auto.commit, group.id) are not applicable to AdminClient.
+        admin_conf: dict[str, object] = {
+            "bootstrap.servers": settings.bootstrap_servers,
+        }
+        if settings.security_protocol != "PLAINTEXT":
+            admin_conf["security.protocol"] = settings.security_protocol
+        if settings.sasl_mechanism:
+            admin_conf["sasl.mechanism"] = settings.sasl_mechanism
+            if settings.sasl_username is not None:
+                admin_conf["sasl.username"] = settings.sasl_username
+            if settings.sasl_password is not None:
+                admin_conf["sasl.password"] = settings.sasl_password.get_secret_value()
+        self._admin: AdminClient = AdminClient(admin_conf)
+
     # ------------------------------------------------------------------
     # ConsumerPort implementation
     # ------------------------------------------------------------------
@@ -121,9 +145,7 @@ class ConfluentConsumerAdapter:
         Raises:
             TopicNotFoundError: When the topic does not exist on the broker.
         """
-        metadata = self._consumer.list_topics(
-            topic=topic, timeout=10.0
-        )
+        metadata = self._consumer.list_topics(topic=topic, timeout=10.0)
         topic_meta = metadata.topics.get(topic)
         if topic_meta is None:
             raise TopicNotFoundError(topic)
@@ -145,9 +167,7 @@ class ConfluentConsumerAdapter:
             raise KafkaException(err)
         return sorted(topic_meta.partitions.keys())
 
-    def get_watermark_offsets(
-        self, topic: str, partition: int
-    ) -> tuple[int, int]:
+    def get_watermark_offsets(self, topic: str, partition: int) -> tuple[int, int]:
         """Return (low, high) watermark offsets for the given partition.
 
         Delegates to ``Consumer.get_watermark_offsets()`` (librdkafka)
@@ -169,9 +189,7 @@ class ConfluentConsumerAdapter:
             # round-trip, not a consumer.poll(); use the dedicated metadata
             # budget so broker latency / many partitions don't spuriously
             # raise (and then get mis-mapped to TopicNotFoundError).
-            low, high = self._consumer.get_watermark_offsets(
-                topic, partition, timeout=_METADATA_TIMEOUT_SECONDS
-            )
+            low, high = self._consumer.get_watermark_offsets(topic, partition, timeout=_METADATA_TIMEOUT_SECONDS)
         except KafkaException as exc:
             # WR-04: only genuine unknown-topic / unknown-partition errors
             # mean "not found". Transient/operational failures (timeout,
@@ -233,9 +251,7 @@ class ConfluentConsumerAdapter:
         scan_count = 0
 
         while True:
-            msg = self._consumer.poll(
-                timeout=self._settings.poll_timeout
-            )
+            msg = self._consumer.poll(timeout=self._settings.poll_timeout)
             if msg is None:
                 break
             if msg.error():
@@ -250,9 +266,7 @@ class ConfluentConsumerAdapter:
             # --- timestamp extraction (T-02-03-B, clock-skew note) ---
             ts_type, ts_ms = msg.timestamp()
             if ts_type == TIMESTAMP_CREATE_TIME and ts_ms > 0:
-                ts_utc = datetime.fromtimestamp(
-                    ts_ms / 1000.0, tz=timezone.utc
-                )
+                ts_utc = datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc)
             else:
                 # LogAppendTime or TIMESTAMP_NOT_AVAILABLE — fallback to
                 # wall-clock now; note: subject to clock-skew (D-context).
@@ -269,22 +283,14 @@ class ConfluentConsumerAdapter:
 
             # --- key (best-effort UTF-8, T-02-03-D) ---
             raw_key = msg.key()
-            key_str: str | None = (
-                raw_key.decode("utf-8", errors="replace")
-                if raw_key is not None
-                else None
-            )
+            key_str: str | None = raw_key.decode("utf-8", errors="replace") if raw_key is not None else None
 
             # --- headers (best-effort UTF-8, T-02-03-D) ---
             raw_headers = msg.headers()
             headers_dict: dict[str, str] = {}
             if raw_headers:
                 for name, val in raw_headers:
-                    headers_dict[name] = (
-                        val.decode("utf-8", errors="replace")
-                        if isinstance(val, bytes)
-                        else str(val)
-                    )
+                    headers_dict[name] = val.decode("utf-8", errors="replace") if isinstance(val, bytes) else str(val)
 
             result.append(
                 KafkaMessage(
@@ -328,9 +334,7 @@ class ConfluentConsumerAdapter:
             (OFFSET_BEGINNING) when before the earliest message.
         """
         tp = TopicPartition(topic, partition, timestamp_ms)
-        result = self._consumer.offsets_for_times(
-            [tp], timeout=_METADATA_TIMEOUT_SECONDS
-        )
+        result = self._consumer.offsets_for_times([tp], timeout=_METADATA_TIMEOUT_SECONDS)
         # result is a list[TopicPartition]; the .offset is the resolved offset
         # or OFFSET_INVALID (-1001) / OFFSET_BEGINNING (-2) when not found.
         if result:
@@ -387,9 +391,7 @@ class ConfluentConsumerAdapter:
         tp = TopicPartition(topic, partition, offset)
         self._consumer.assign([tp])
 
-        msg = self._consumer.poll(
-            timeout=self._settings.poll_timeout * 5
-        )
+        msg = self._consumer.poll(timeout=self._settings.poll_timeout * 5)
         # WR-05: the offset is already known to be in range (low <= offset <
         # high, checked above). A None poll result therefore means the broker
         # did not deliver the message within the budget — a TRANSIENT/operational
@@ -399,7 +401,9 @@ class ConfluentConsumerAdapter:
         # MessageNotFoundError for the watermark range-check.
         if msg is None:
             raise TransientError(
-                topic, partition, offset,
+                topic,
+                partition,
+                offset,
                 reason=(
                     "poll timed out for an in-range offset; the message likely "
                     "exists but was not delivered within the poll budget"
@@ -407,37 +411,29 @@ class ConfluentConsumerAdapter:
             )
         if msg.error():
             raise TransientError(
-                topic, partition, offset,
+                topic,
+                partition,
+                offset,
                 reason=f"broker returned an error for in-range offset: {msg.error()}",
             )
 
         # --- timestamp extraction (same as fetch_messages) ---
         ts_type, ts_ms = msg.timestamp()
         if ts_type == TIMESTAMP_CREATE_TIME and ts_ms > 0:
-            ts_utc = datetime.fromtimestamp(
-                ts_ms / 1000.0, tz=timezone.utc
-            )
+            ts_utc = datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc)
         else:
             ts_utc = datetime.now(tz=timezone.utc)
 
         # --- key (best-effort UTF-8, T-02-03-D) ---
         raw_key = msg.key()
-        key_str: str | None = (
-            raw_key.decode("utf-8", errors="replace")
-            if raw_key is not None
-            else None
-        )
+        key_str: str | None = raw_key.decode("utf-8", errors="replace") if raw_key is not None else None
 
         # --- headers (best-effort UTF-8, T-02-03-D) ---
         raw_headers = msg.headers()
         headers_dict: dict[str, str] = {}
         if raw_headers:
             for name, val in raw_headers:
-                headers_dict[name] = (
-                    val.decode("utf-8", errors="replace")
-                    if isinstance(val, bytes)
-                    else str(val)
-                )
+                headers_dict[name] = val.decode("utf-8", errors="replace") if isinstance(val, bytes) else str(val)
 
         return KafkaMessage(
             topic=topic,
@@ -450,6 +446,77 @@ class ConfluentConsumerAdapter:
             timestamp_utc=ts_utc,
             raw=msg.value() or b"",
         )
+
+    def consumer_group_lag(self, group: str, topics: list[str] | None = None) -> list[LagRecord]:
+        """Return per-partition lag for a consumer group.
+
+        Uses AdminClient.list_consumer_group_offsets() for committed
+        offsets (read-only, no group join) and get_watermark_offsets()
+        for end offsets. Read-only — no offset commits or writes.
+
+        Args:
+            group: Consumer group ID.
+            topics: Optional topic filter. When None, reports lag for
+                all topics with committed offsets.
+
+        Returns:
+            List of LagRecord objects. Empty list when the group has
+            no committed offsets (or does not exist).
+        """
+        # Fetch committed offsets for the group.
+        # list_consumer_group_offsets returns a dict-like {group_str: Future};
+        # the result maps TopicPartition → committed offset.
+        futures = self._admin.list_consumer_group_offsets([ConsumerGroupTopicPartitions(group)])
+        # futures is {group_str: Future}; get the single result.
+        future = futures[group]
+        try:
+            group_offsets = future.result()  # ConsumerGroupTopicPartitions
+        except KafkaException:
+            # Group does not exist or has no committed offsets.
+            return []
+
+        # group_offsets.topic_partitions is list[TopicPartition]
+        committed_tps = group_offsets.topic_partitions
+
+        # Filter out partitions with errors (no committed offset).
+        # Also filter by topics if specified.
+        now = datetime.now(tz=timezone.utc)
+        records: list[LagRecord] = []
+
+        for tp in committed_tps:
+            # Skip if topic filter is active and this topic is excluded.
+            if topics is not None and tp.topic not in topics:
+                continue
+
+            # Determine committed offset.
+            # tp.offset is -1001 (OFFSET_INVALID) when no offset is committed.
+            if tp.error is not None or tp.offset < 0:
+                current_offset = 0
+            else:
+                current_offset = tp.offset
+
+            # Get end offset (high watermark) for this partition.
+            try:
+                _low, high = self.get_watermark_offsets(tp.topic, tp.partition)
+            except (TopicNotFoundError, KafkaException):
+                # Partition may no longer exist; skip it.
+                continue
+
+            lag = high - current_offset
+
+            records.append(
+                LagRecord(
+                    group=group,
+                    topic=tp.topic,
+                    partition=tp.partition,
+                    current_offset=current_offset,
+                    end_offset=high,
+                    lag=lag,
+                    timestamp_utc=now,
+                )
+            )
+
+        return records
 
     # ------------------------------------------------------------------
     # Context manager

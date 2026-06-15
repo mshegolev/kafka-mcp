@@ -35,7 +35,7 @@ from kafka_mcp.adapters.outbound.confluent_consumer import (
     ConfluentConsumerAdapter,
 )
 from kafka_mcp.config import KafkaMcpSettings
-from kafka_mcp.domain.models import KafkaMessage, TopicInfo
+from kafka_mcp.domain.models import KafkaMessage, LagRecord, TopicInfo
 from kafka_mcp.domain.search_service import TopicService
 from kafka_mcp.ports.consumer import ConsumerPort
 from kafka_mcp.ports.schema_registry import SchemaRegistryPort
@@ -103,9 +103,7 @@ class KafkaClient:
                 Pass a real or mock registry to enable Phase 2 operations.
         """
         self._consumer = consumer
-        effective_registry: SchemaRegistryPort = (
-            registry if registry is not None else _NullSchemaRegistry()
-        )
+        effective_registry: SchemaRegistryPort = registry if registry is not None else _NullSchemaRegistry()
         self._service = TopicService(consumer, effective_registry)
 
     @classmethod
@@ -140,11 +138,7 @@ SchemaRegistryHttpAdapter`.
         registry = SchemaRegistryHttpAdapter(
             url=settings.schema_registry_url,
             user=settings.sr_user,
-            password=(
-                settings.sr_pass.get_secret_value()
-                if settings.sr_pass is not None
-                else None
-            ),
+            password=(settings.sr_pass.get_secret_value() if settings.sr_pass is not None else None),
         )
         return cls(consumer, registry)
 
@@ -159,9 +153,7 @@ SchemaRegistryHttpAdapter`.
         Returns:
             Sorted list of topic name strings.
         """
-        return self._service.list_topics(
-            include_internal=include_internal
-        )
+        return self._service.list_topics(include_internal=include_internal)
 
     def describe_topic(self, topic: str) -> TopicInfo:
         """Return detailed metadata for a single topic.
@@ -225,6 +217,22 @@ SchemaRegistryHttpAdapter`.
             DecodeError: When the payload cannot be decoded.
         """
         return self._service.get_message(topic, partition, offset)
+
+    def consumer_group_lag(self, group: str, topics: list[str] | None = None) -> list[LagRecord]:
+        """Return per-partition consumer lag for a consumer group.
+
+        Read-only query — delegates directly to the consumer port.
+        No domain orchestration needed (no decode, no search logic).
+
+        Args:
+            group: Consumer group ID.
+            topics: Optional list of topic names to filter. When None,
+                reports lag for all topics with committed offsets.
+
+        Returns:
+            List of :class:`~kafka_mcp.domain.models.LagRecord` objects.
+        """
+        return self._consumer.consumer_group_lag(group, topics)
 
     # ------------------------------------------------------------------
     # Lifecycle (WR-02): the underlying librdkafka Consumer holds
