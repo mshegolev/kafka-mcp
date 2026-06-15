@@ -41,7 +41,10 @@ live-published, real-broker-verified, with extended decode + new triage tooling
   2. Real-wire round-trip tests for `list_topics`, `describe_topic`, `search_messages`, and `get_message` pass against the live broker; the brick paths remain read-only throughout (assign-only, no offset commits to the producer's group)
   3. Real-wire decode tests pass for at least one Avro-encoded, one Protobuf-encoded, and one JSON-encoded message round-trip against the live Schema Registry (not mocks); decoded values match the seeded payloads
   4. The v1.1 surfaces are covered by the real-wire suite: key decode (`KEY-01`/`KEY-02`) and consumer lag (`LAG-01`/`LAG-03`) each have at least one integration test that exercises the live broker path
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 06-01-PLAN.md — Testcontainers fixtures (Kafka + SR) + pytest marker + basic connectivity tests (list_topics, describe_topic)
+- [ ] 06-02-PLAN.md — Search/get round-trips + Avro/Protobuf/JSON decode + v1.1 surface tests (key decode, schema_id, consumer_group_lag)
 **UI hint**: no
 
 ### Phase 7: Release Pipeline
@@ -65,5 +68,5 @@ live-published, real-broker-verified, with extended decode + new triage tooling
 | 3. Native + Ship | v1.0 | 3/3 | Complete | 2026-06-08 |
 | 4. Extended Decode & Transport | v1.1 | 3/3 | Complete   | 2026-06-08 |
 | 5. Consumer Lag Tooling | v1.1 | 2/2 | Complete | 2026-06-16 |
-| 6. Real-Broker E2E Contour | v1.1 | 0/TBD | Not started | - |
+| 6. Real-Broker E2E Contour | v1.1 | 0/2 | In Progress | - |
 | 7. Release Pipeline | v1.1 | 0/TBD | Not started | - |
