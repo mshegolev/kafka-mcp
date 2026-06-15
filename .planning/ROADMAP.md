@@ -95,6 +95,6 @@ Plans:
 | 2. Search + Decode | v1.0 | 5/5 | Complete | 2026-06-06 |
 | 3. Native + Ship | v1.0 | 3/3 | Complete | 2026-06-08 |
 | 4. Extended Decode & Transport | v1.1 | 3/3 | Complete   | 2026-06-08 |
-| 5. Consumer Lag Tooling | v1.1 | 0/TBD | Not started | - |
+| 5. Consumer Lag Tooling | v1.1 | 0/2 | In progress | - |
 | 6. Real-Broker E2E Contour | v1.1 | 0/TBD | Not started | - |
 | 7. Release Pipeline | v1.1 | 0/TBD | Not started | - |
