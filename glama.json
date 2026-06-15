@@ -44,6 +44,11 @@
       "name": "get_message",
       "description": "Retrieve a single Kafka message by topic, partition, and offset",
       "readOnlyHint": true
+    },
+    {
+      "name": "consumer_group_lag",
+      "description": "Report per-partition consumer lag (committed offset vs end offset) for a given consumer group. Read-only — no commits, no group joins.",
+      "readOnlyHint": true
     }
   ],
   "maintainers": [
