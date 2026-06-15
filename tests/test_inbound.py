@@ -21,7 +21,7 @@ from kafka_mcp.domain.errors import (
     TopicNotFoundError,
     TransientError,
 )
-from kafka_mcp.domain.models import KafkaMessage, PartitionInfo, TopicInfo
+from kafka_mcp.domain.models import KafkaMessage, LagRecord, PartitionInfo, TopicInfo
 
 # ---------------------------------------------------------------------------
 # Shared test fixtures
@@ -41,6 +41,17 @@ _SAMPLE_MSG = KafkaMessage(
     source="kafka",
     event_type="kafka_message",
     keys={"order_id": "ORD-123", "msisdn": None, "customer_id": None, "product_id": None},
+)
+
+_SAMPLE_LAG_TS = datetime(2026, 6, 16, 12, 0, 0, tzinfo=timezone.utc)
+_SAMPLE_LAG_RECORD = LagRecord(
+    group="my-group",
+    topic="orders",
+    partition=0,
+    current_offset=50,
+    end_offset=100,
+    lag=50,
+    timestamp_utc=_SAMPLE_LAG_TS,
 )
 
 # ---------------------------------------------------------------------------
@@ -89,9 +100,7 @@ class MockKafkaClient:
             return [_SAMPLE_MSG]
         return []
 
-    def get_message(
-        self, topic: str, partition: int, offset: int
-    ) -> KafkaMessage:
+    def get_message(self, topic: str, partition: int, offset: int) -> KafkaMessage:
         """Return sample message at orders/0/42; raise errors for special cases."""
         if topic == "orders" and partition == 0 and offset == 42:
             return _SAMPLE_MSG
@@ -103,6 +112,26 @@ class MockKafkaClient:
             # WR-03: in-range offset that timed out — retryable, not absence.
             raise TransientError(topic, partition, offset, "poll timed out")
         raise MessageNotFoundError(topic, partition, offset)
+
+    def consumer_group_lag(self, group: str, topics: list[str] | None = None) -> list[LagRecord]:
+        """Return sample lag records for 'my-group'; else empty list."""
+        if group == "my-group":
+            records = [
+                _SAMPLE_LAG_RECORD,
+                LagRecord(
+                    group="my-group",
+                    topic="payments",
+                    partition=0,
+                    current_offset=30,
+                    end_offset=200,
+                    lag=170,
+                    timestamp_utc=_SAMPLE_LAG_TS,
+                ),
+            ]
+            if topics is not None:
+                records = [r for r in records if r.topic in topics]
+            return records
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -134,9 +163,7 @@ def test_fastapi_list_topics_include_internal() -> None:
 
     app = create_app(MockKafkaClient())
     client = TestClient(app)
-    response = client.post(
-        "/tools/list_topics", json={"include_internal": True}
-    )
+    response = client.post("/tools/list_topics", json={"include_internal": True})
     assert response.status_code == 200
     assert "__consumer_offsets" in response.json()["result"]
 
@@ -149,9 +176,7 @@ def test_fastapi_describe_topic() -> None:
 
     app = create_app(MockKafkaClient())
     client = TestClient(app)
-    response = client.post(
-        "/tools/describe_topic", json={"topic": "payments"}
-    )
+    response = client.post("/tools/describe_topic", json={"topic": "payments"})
     assert response.status_code == 200
     result = response.json()["result"]
     assert result["name"] == "payments"
@@ -167,9 +192,7 @@ def test_fastapi_describe_topic_not_found() -> None:
 
     app = create_app(MockKafkaClient())
     client = TestClient(app)
-    response = client.post(
-        "/tools/describe_topic", json={"topic": "unknown"}
-    )
+    response = client.post("/tools/describe_topic", json={"topic": "unknown"})
     assert response.status_code == 404
     detail = response.json()["detail"]
     assert detail["error"] == "TopicNotFoundError"
@@ -234,9 +257,7 @@ def test_cli_list_topics_include_internal() -> None:
     """run_list_topics with include_internal=True includes __consumer_offsets."""
     from kafka_mcp.adapters.inbound.cli import run_list_topics
 
-    output = _capture_run(
-        run_list_topics, MockKafkaClient(), include_internal=True, as_json=False
-    )
+    output = _capture_run(run_list_topics, MockKafkaClient(), include_internal=True, as_json=False)
     assert "__consumer_offsets" in output
 
 
@@ -244,9 +265,7 @@ def test_cli_describe_topic_table() -> None:
     """run_describe_topic prints partition table with Partition header and latest offset."""
     from kafka_mcp.adapters.inbound.cli import run_describe_topic
 
-    output = _capture_run(
-        run_describe_topic, MockKafkaClient(), "payments", as_json=False
-    )
+    output = _capture_run(run_describe_topic, MockKafkaClient(), "payments", as_json=False)
     assert "Partition" in output
     assert "500" in output  # latest offset for partition 0
 
@@ -257,9 +276,7 @@ def test_cli_describe_topic_json() -> None:
 
     from kafka_mcp.adapters.inbound.cli import run_describe_topic
 
-    output = _capture_run(
-        run_describe_topic, MockKafkaClient(), "payments", as_json=True
-    )
+    output = _capture_run(run_describe_topic, MockKafkaClient(), "payments", as_json=True)
     data = orjson.loads(output)
     assert data["name"] == "payments"
     assert data["partition_count"] == 2
@@ -428,16 +445,24 @@ def test_cli_search_messages_flags() -> None:
     """parse_args accepts all search-messages flags."""
     from kafka_mcp.adapters.inbound.cli import parse_args
 
-    ns = parse_args([
-        "search-messages",
-        "--key", "ORD-123",
-        "--key-field", "header:ce-type",
-        "--topics", "orders,payments",
-        "--time-from", "2026-01-01T00:00:00Z",
-        "--time-to", "2026-01-02T00:00:00Z",
-        "--limit", "100",
-        "--json",
-    ])
+    ns = parse_args(
+        [
+            "search-messages",
+            "--key",
+            "ORD-123",
+            "--key-field",
+            "header:ce-type",
+            "--topics",
+            "orders,payments",
+            "--time-from",
+            "2026-01-01T00:00:00Z",
+            "--time-to",
+            "2026-01-02T00:00:00Z",
+            "--limit",
+            "100",
+            "--json",
+        ]
+    )
     assert ns.subcommand == "search-messages"
     assert ns.key == "ORD-123"
     assert ns.key_field == "header:ce-type"
@@ -477,9 +502,7 @@ def test_cli_get_message_json_output() -> None:
     assert data["topic"] == "orders"
     assert data["offset"] == 42
     # raw must be a string (base64), not bytes
-    assert isinstance(data["raw"], str), (
-        f"raw should be str (base64), got {type(data['raw'])}"
-    )
+    assert isinstance(data["raw"], str), f"raw should be str (base64), got {type(data['raw'])}"
 
 
 def test_cli_get_message_not_found_exits_1() -> None:
@@ -534,9 +557,7 @@ def test_cli_raw_is_base64_in_json() -> None:
     )
     data = orjson.loads(output)
     raw_field = data["raw"]
-    assert isinstance(raw_field, str), (
-        f"raw should be str, got {type(raw_field)}"
-    )
+    assert isinstance(raw_field, str), f"raw should be str, got {type(raw_field)}"
     # Verify it decodes back to original bytes
     decoded = base64.b64decode(raw_field)
     assert decoded == _SAMPLE_RAW
@@ -556,9 +577,7 @@ def test_mcp_search_messages_tool_registered() -> None:
     server = create_mcp_server(MockKafkaClient())
     tools = asyncio.run(server.list_tools())
     tool_names = [t.name for t in tools]
-    assert "search_messages" in tool_names, (
-        f"search_messages tool missing; found: {tool_names}"
-    )
+    assert "search_messages" in tool_names, f"search_messages tool missing; found: {tool_names}"
 
 
 def test_mcp_search_messages_readonlyhint() -> None:
@@ -573,9 +592,7 @@ def test_mcp_search_messages_readonlyhint() -> None:
     sm = tool_map.get("search_messages")
     assert sm is not None, "search_messages tool not found"
     assert sm.annotations is not None, "search_messages missing annotations"
-    assert sm.annotations.readOnlyHint is True, (
-        f"readOnlyHint expected True, got {sm.annotations.readOnlyHint}"
-    )
+    assert sm.annotations.readOnlyHint is True, f"readOnlyHint expected True, got {sm.annotations.readOnlyHint}"
 
 
 def test_mcp_search_messages_returns_list() -> None:
@@ -587,9 +604,7 @@ def test_mcp_search_messages_returns_list() -> None:
     # FastMCP tools are callable directly via server.call_tool
     import asyncio
 
-    result = asyncio.run(
-        server.call_tool("search_messages", {"key": "ORD-123"})
-    )
+    result = asyncio.run(server.call_tool("search_messages", {"key": "ORD-123"}))
     # result is a list of TextContent; parse the text as the returned value
     # FastMCP returns the Python return value encoded in content
     assert result is not None
@@ -606,9 +621,7 @@ def test_mcp_get_message_tool_registered() -> None:
     server = create_mcp_server(MockKafkaClient())
     tools = asyncio.run(server.list_tools())
     tool_names = [t.name for t in tools]
-    assert "get_message" in tool_names, (
-        f"get_message tool missing; found: {tool_names}"
-    )
+    assert "get_message" in tool_names, f"get_message tool missing; found: {tool_names}"
 
 
 def test_mcp_get_message_decode_error_mapped() -> None:
@@ -660,9 +673,7 @@ def test_fastapi_post_search_messages_200() -> None:
 
     app = create_app(MockKafkaClient())
     client = TestClient(app)
-    response = client.post(
-        "/tools/search_messages", json={"key": "ORD-123"}
-    )
+    response = client.post("/tools/search_messages", json={"key": "ORD-123"})
     assert response.status_code == 200
     data = response.json()
     assert "result" in data
@@ -678,15 +689,11 @@ def test_fastapi_post_search_messages_raw_base64() -> None:
 
     app = create_app(MockKafkaClient())
     client = TestClient(app)
-    response = client.post(
-        "/tools/search_messages", json={"key": "ORD-123"}
-    )
+    response = client.post("/tools/search_messages", json={"key": "ORD-123"})
     assert response.status_code == 200
     result = response.json()["result"][0]
     assert "raw" in result
-    assert isinstance(result["raw"], str), (
-        f"raw should be str (base64), got {type(result['raw'])}"
-    )
+    assert isinstance(result["raw"], str), f"raw should be str (base64), got {type(result['raw'])}"
     # Verify it decodes to the original bytes
     decoded = base64.b64decode(result["raw"])
     assert decoded == _SAMPLE_RAW
@@ -830,7 +837,7 @@ class TestServerCliDispatch:
 
     @pytest.mark.parametrize(
         "subcommand",
-        ["list-topics", "describe-topic", "search-messages", "get-message"],
+        ["list-topics", "describe-topic", "search-messages", "get-message", "consumer-group-lag"],
     )
     def test_subcommand_routes_to_cli_runner(self, subcommand: str) -> None:
         from unittest.mock import patch
@@ -842,9 +849,11 @@ class TestServerCliDispatch:
         def _fake_cli(args: list) -> None:
             captured["args"] = args
 
-        with patch.object(sys, "argv", ["kafka-mcp", subcommand, "x"]), patch(
-            "kafka_mcp.adapters.inbound.cli.main", _fake_cli
-        ), patch("uvicorn.run") as mock_uvicorn:
+        with (
+            patch.object(sys, "argv", ["kafka-mcp", subcommand, "x"]),
+            patch("kafka_mcp.adapters.inbound.cli.main", _fake_cli),
+            patch("uvicorn.run") as mock_uvicorn,
+        ):
             server.main()
 
         assert captured.get("args") == [subcommand, "x"]
@@ -873,9 +882,7 @@ class TestSc4Regression:
         from kafka_mcp.adapters.inbound.mcp_stdio import create_mcp_server
 
         server = create_mcp_server(MockKafkaClient())
-        result = asyncio.run(
-            server.call_tool("search_messages", {"key": "ORD-123"})
-        )
+        result = asyncio.run(server.call_tool("search_messages", {"key": "ORD-123"}))
         # FastMCP returns a list of content objects; must be non-empty
         assert result is not None
         assert len(result) > 0
@@ -1185,9 +1192,7 @@ class TestHttpMcpMount:
         client_app = create_app(MockKafkaClient())
         with TestClient(client_app) as tc:
             resp = tc.post("/mcp/", json={})
-            assert resp.status_code != 404, (
-                f"Expected non-404 at POST /mcp/ but got {resp.status_code}."
-            )
+            assert resp.status_code != 404, f"Expected non-404 at POST /mcp/ but got {resp.status_code}."
 
     def test_existing_tools_routes_unaffected(self) -> None:
         """Existing /tools/* routes remain accessible after /mcp mount."""
@@ -1198,9 +1203,7 @@ class TestHttpMcpMount:
         client_app = create_app(MockKafkaClient())
         with TestClient(client_app) as tc:
             resp = tc.post("/tools/list_topics", json={})
-            assert resp.status_code == 200, (
-                f"Expected 200 at /tools/list_topics but got {resp.status_code}."
-            )
+            assert resp.status_code == 200, f"Expected 200 at /tools/list_topics but got {resp.status_code}."
 
 
 # ---------------------------------------------------------------------------
@@ -1390,3 +1393,357 @@ class TestLimitUpperBound:
             )
         )
         assert result is not None
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 Plan 02: consumer_group_lag 4-face tests (LAG-02)
+# ---------------------------------------------------------------------------
+
+
+class TestFastapiConsumerGroupLag:
+    """FastAPI: POST /tools/consumer_group_lag — LAG-02 REST face."""
+
+    def test_consumer_group_lag_200(self) -> None:
+        """POST returns 200 with result list of lag records."""
+        from fastapi.testclient import TestClient
+
+        from kafka_mcp.adapters.inbound.rest_api import create_app
+
+        app = create_app(MockKafkaClient())
+        client = TestClient(app)
+        response = client.post("/tools/consumer_group_lag", json={"group": "my-group"})
+        assert response.status_code == 200
+        data = response.json()
+        assert "result" in data
+        assert isinstance(data["result"], list)
+        assert len(data["result"]) == 2
+        rec = data["result"][0]
+        assert rec["group"] == "my-group"
+        assert rec["topic"] == "orders"
+        assert rec["lag"] == 50
+        assert rec["source"] == "kafka"
+        assert rec["event_type"] == "consumer_lag"
+
+    def test_consumer_group_lag_topics_filter(self) -> None:
+        """POST with topics filter returns only matching topics."""
+        from fastapi.testclient import TestClient
+
+        from kafka_mcp.adapters.inbound.rest_api import create_app
+
+        app = create_app(MockKafkaClient())
+        client = TestClient(app)
+        response = client.post(
+            "/tools/consumer_group_lag",
+            json={"group": "my-group", "topics": ["orders"]},
+        )
+        assert response.status_code == 200
+        result = response.json()["result"]
+        assert len(result) == 1
+        assert result[0]["topic"] == "orders"
+
+    def test_consumer_group_lag_empty_group(self) -> None:
+        """POST with unknown group returns empty result list."""
+        from fastapi.testclient import TestClient
+
+        from kafka_mcp.adapters.inbound.rest_api import create_app
+
+        app = create_app(MockKafkaClient())
+        client = TestClient(app)
+        response = client.post("/tools/consumer_group_lag", json={"group": "unknown-group"})
+        assert response.status_code == 200
+        assert response.json()["result"] == []
+
+    def test_consumer_group_lag_timestamp_utc_is_string(self) -> None:
+        """timestamp_utc in response is an ISO-8601 string, not a datetime."""
+        from fastapi.testclient import TestClient
+
+        from kafka_mcp.adapters.inbound.rest_api import create_app
+
+        app = create_app(MockKafkaClient())
+        client = TestClient(app)
+        response = client.post("/tools/consumer_group_lag", json={"group": "my-group"})
+        rec = response.json()["result"][0]
+        assert isinstance(rec["timestamp_utc"], str)
+        assert "2026-06-16" in rec["timestamp_utc"]
+
+    def test_consumer_group_lag_route_exists(self) -> None:
+        """POST /tools/consumer_group_lag route is registered."""
+        from kafka_mcp.adapters.inbound.rest_api import create_app
+
+        app = create_app(MockKafkaClient())
+        paths = [r.path for r in app.routes if hasattr(r, "path")]
+        assert "/tools/consumer_group_lag" in paths
+
+
+class TestMcpConsumerGroupLag:
+    """MCP stdio: consumer_group_lag tool — LAG-02 MCP face."""
+
+    def test_tool_registered(self) -> None:
+        """consumer_group_lag tool is registered on FastMCP server."""
+        import asyncio
+
+        from kafka_mcp.adapters.inbound.mcp_stdio import create_mcp_server
+
+        server = create_mcp_server(MockKafkaClient())
+        tools = asyncio.run(server.list_tools())
+        tool_names = [t.name for t in tools]
+        assert "consumer_group_lag" in tool_names
+
+    def test_read_only_hint(self) -> None:
+        """consumer_group_lag tool has readOnlyHint=True (LAG-01 read-only)."""
+        import asyncio
+
+        from kafka_mcp.adapters.inbound.mcp_stdio import create_mcp_server
+
+        server = create_mcp_server(MockKafkaClient())
+        tools = asyncio.run(server.list_tools())
+        tool_map = {t.name: t for t in tools}
+        cgl = tool_map["consumer_group_lag"]
+        assert cgl.annotations is not None
+        assert cgl.annotations.readOnlyHint is True
+
+    def test_returns_lag_records(self) -> None:
+        """consumer_group_lag tool returns non-empty result for known group."""
+        import asyncio
+        import json
+
+        from kafka_mcp.adapters.inbound.mcp_stdio import create_mcp_server
+
+        server = create_mcp_server(MockKafkaClient())
+        result = asyncio.run(server.call_tool("consumer_group_lag", {"group": "my-group"}))
+        assert result is not None
+        # call_tool returns (content_list, is_error) or just content_list
+        # depending on FastMCP version; handle both shapes
+        content = result[0] if isinstance(result, tuple) else result
+        assert len(content) > 0
+        # Each dict in list[dict] is serialized as a separate TextContent
+        first = json.loads(content[0].text)
+        assert isinstance(first, dict)
+        assert first["group"] == "my-group"
+        assert first["source"] == "kafka"
+        assert first["event_type"] == "consumer_lag"
+        # Should have 2 records total (orders + payments)
+        assert len(content) == 2
+
+    def test_empty_group_returns_empty(self) -> None:
+        """consumer_group_lag for unknown group returns empty list."""
+        import asyncio
+
+        from kafka_mcp.adapters.inbound.mcp_stdio import create_mcp_server
+
+        server = create_mcp_server(MockKafkaClient())
+        result = asyncio.run(server.call_tool("consumer_group_lag", {"group": "ghost"}))
+        assert result is not None
+        content = result[0] if isinstance(result, tuple) else result
+        # Empty list returns empty content list (no TextContent items)
+        assert len(content) == 0
+
+
+class TestCliConsumerGroupLag:
+    """CLI: consumer-group-lag subcommand — LAG-02 CLI face."""
+
+    def test_parse_args(self) -> None:
+        """parse_args parses consumer-group-lag with --group."""
+        from kafka_mcp.adapters.inbound.cli import parse_args
+
+        ns = parse_args(["consumer-group-lag", "--group", "my-group"])
+        assert ns.subcommand == "consumer-group-lag"
+        assert ns.group == "my-group"
+        assert ns.topics is None
+        assert ns.json is False
+
+    def test_parse_args_with_topics(self) -> None:
+        """parse_args accepts --topics flag."""
+        from kafka_mcp.adapters.inbound.cli import parse_args
+
+        ns = parse_args(
+            [
+                "consumer-group-lag",
+                "--group",
+                "my-group",
+                "--topics",
+                "orders,payments",
+            ]
+        )
+        assert ns.topics == "orders,payments"
+
+    def test_table_output(self) -> None:
+        """run_consumer_group_lag prints a table with lag data."""
+        from kafka_mcp.adapters.inbound.cli import run_consumer_group_lag
+
+        output = _capture_run(
+            run_consumer_group_lag,
+            MockKafkaClient(),
+            group="my-group",
+            as_json=False,
+        )
+        assert "Group" in output
+        assert "Topic" in output
+        assert "Lag" in output
+        assert "my-group" in output
+        assert "orders" in output
+        assert "50" in output  # lag value
+
+    def test_json_output(self) -> None:
+        """run_consumer_group_lag with as_json=True prints valid JSON list."""
+        import orjson
+
+        from kafka_mcp.adapters.inbound.cli import run_consumer_group_lag
+
+        output = _capture_run(
+            run_consumer_group_lag,
+            MockKafkaClient(),
+            group="my-group",
+            as_json=True,
+        )
+        data = orjson.loads(output)
+        assert isinstance(data, list)
+        assert len(data) == 2
+        assert data[0]["group"] == "my-group"
+        assert data[0]["source"] == "kafka"
+        assert data[0]["event_type"] == "consumer_lag"
+
+    def test_empty_group_table(self) -> None:
+        """Empty group prints '(no lag records)' message."""
+        from kafka_mcp.adapters.inbound.cli import run_consumer_group_lag
+
+        output = _capture_run(
+            run_consumer_group_lag,
+            MockKafkaClient(),
+            group="unknown-group",
+            as_json=False,
+        )
+        assert "(no lag records)" in output
+
+    def test_topics_filter(self) -> None:
+        """--topics flag filters results to matching topics only."""
+        import orjson
+
+        from kafka_mcp.adapters.inbound.cli import run_consumer_group_lag
+
+        output = _capture_run(
+            run_consumer_group_lag,
+            MockKafkaClient(),
+            group="my-group",
+            topics="orders",
+            as_json=True,
+        )
+        data = orjson.loads(output)
+        assert len(data) == 1
+        assert data[0]["topic"] == "orders"
+
+
+class TestServerConsumerGroupLagDispatch:
+    """server.main routes consumer-group-lag to CLI runner."""
+
+    def test_consumer_group_lag_routes_to_cli(self) -> None:
+        from unittest.mock import patch as mock_patch
+
+        import kafka_mcp.server as server
+
+        captured: dict = {}
+
+        def _fake_cli(args: list) -> None:
+            captured["args"] = args
+
+        with (
+            mock_patch.object(sys, "argv", ["kafka-mcp", "consumer-group-lag", "--group", "g"]),
+            mock_patch("kafka_mcp.adapters.inbound.cli.main", _fake_cli),
+            mock_patch("uvicorn.run") as mock_uvicorn,
+        ):
+            server.main()
+
+        assert captured.get("args") == ["consumer-group-lag", "--group", "g"]
+        mock_uvicorn.assert_not_called()
+
+
+class TestHttpMcpConsumerGroupLag:
+    """HTTP MCP: consumer_group_lag tool at /mcp — LAG-02 HTTP MCP face."""
+
+    def test_http_mcp_tool_registered(self) -> None:
+        """HTTP MCP server has consumer_group_lag tool."""
+        import asyncio
+
+        from kafka_mcp.adapters.inbound.rest_api import _create_http_mcp_server
+
+        server = _create_http_mcp_server(MockKafkaClient())
+        tools = asyncio.run(server.list_tools())
+        tool_names = [t.name for t in tools]
+        assert "consumer_group_lag" in tool_names
+
+    def test_http_mcp_read_only_hint(self) -> None:
+        """HTTP MCP consumer_group_lag tool has readOnlyHint=True."""
+        import asyncio
+
+        from kafka_mcp.adapters.inbound.rest_api import _create_http_mcp_server
+
+        server = _create_http_mcp_server(MockKafkaClient())
+        tools = asyncio.run(server.list_tools())
+        tool_map = {t.name: t for t in tools}
+        cgl = tool_map["consumer_group_lag"]
+        assert cgl.annotations is not None
+        assert cgl.annotations.readOnlyHint is True
+
+
+class TestConsumerGroupLagFourFaceSymmetry:
+    """LAG-02: all four faces return identical LagRecord schema."""
+
+    def test_lib_face(self) -> None:
+        """Lib face: MockKafkaClient.consumer_group_lag returns list[LagRecord]."""
+        mock = MockKafkaClient()
+        records = mock.consumer_group_lag("my-group")
+        assert isinstance(records, list)
+        assert len(records) == 2
+        assert all(isinstance(r, LagRecord) for r in records)
+        assert records[0].source == "kafka"
+        assert records[0].event_type == "consumer_lag"
+
+    def test_four_face_field_parity(self) -> None:
+        """All faces produce the same field set for LagRecord."""
+        import asyncio
+        import json
+
+        from fastapi.testclient import TestClient
+
+        from kafka_mcp.adapters.inbound.mcp_stdio import create_mcp_server
+        from kafka_mcp.adapters.inbound.rest_api import create_app
+
+        mock = MockKafkaClient()
+        required_fields = {
+            "group",
+            "topic",
+            "partition",
+            "current_offset",
+            "end_offset",
+            "lag",
+            "timestamp_utc",
+            "source",
+            "event_type",
+        }
+
+        # Lib face
+        lib_fields = set(mock.consumer_group_lag("my-group")[0].model_dump().keys())
+        assert required_fields <= lib_fields
+
+        # REST face
+        app = create_app(mock)
+        tc = TestClient(app)
+        resp = tc.post("/tools/consumer_group_lag", json={"group": "my-group"})
+        rest_fields = set(resp.json()["result"][0].keys())
+        assert required_fields <= rest_fields
+
+        # MCP stdio face
+        server = create_mcp_server(mock)
+        result = asyncio.run(server.call_tool("consumer_group_lag", {"group": "my-group"}))
+        content = result[0] if isinstance(result, tuple) else result
+        mcp_fields = set(json.loads(content[0].text).keys())
+        assert required_fields <= mcp_fields
+
+        # CLI face (JSON output)
+        import orjson
+
+        from kafka_mcp.adapters.inbound.cli import run_consumer_group_lag
+
+        cli_out = _capture_run(run_consumer_group_lag, mock, group="my-group", as_json=True)
+        cli_fields = set(orjson.loads(cli_out)[0].keys())
+        assert required_fields <= cli_fields

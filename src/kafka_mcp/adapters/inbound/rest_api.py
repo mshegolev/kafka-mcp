@@ -1,10 +1,11 @@
 """FastAPI REST inbound adapter — MCP-mirror POST /tools/* convention.
 
 Exposes:
-  POST /tools/list_topics       — body: {include_internal?: bool}
-  POST /tools/describe_topic    — body: {topic: str}
-  POST /tools/search_messages   — body: SearchMessagesRequest
-  POST /tools/get_message       — body: GetMessageRequest
+  POST /tools/list_topics            — body: {include_internal?: bool}
+  POST /tools/describe_topic         — body: {topic: str}
+  POST /tools/search_messages        — body: SearchMessagesRequest
+  POST /tools/get_message            — body: GetMessageRequest
+  POST /tools/consumer_group_lag     — body: ConsumerGroupLagRequest
 
 Route names follow the MCP tool-call convention (D-16): POST /tools/{tool_name}
 taking a JSON body.  No REST-resource routes like /topics or /describe.
@@ -43,7 +44,7 @@ from kafka_mcp.domain.errors import (
     TopicNotFoundError,
     TransientError,
 )
-from kafka_mcp.domain.models import KafkaMessage
+from kafka_mcp.domain.models import KafkaMessage, LagRecord
 
 _READ_ONLY = ToolAnnotations(readOnlyHint=True)
 
@@ -94,6 +95,17 @@ class GetMessageRequest(BaseModel):
     offset: int
 
 
+class ConsumerGroupLagRequest(BaseModel):
+    """Request body for POST /tools/consumer_group_lag.
+
+    ``group`` must be a non-empty string.
+    ``topics`` is optional — when None, reports lag for all committed topics.
+    """
+
+    group: str
+    topics: list[str] | None = None
+
+
 # ---------------------------------------------------------------------------
 # Serialization helper
 # ---------------------------------------------------------------------------
@@ -118,6 +130,25 @@ def _serialize_message(msg: KafkaMessage) -> dict:
     if msg.raw_key is not None:
         data["raw_key"] = base64.b64encode(msg.raw_key).decode("ascii")
     # Serialize datetime to ISO-8601 string (model_dump may return datetime obj)
+    if isinstance(data.get("timestamp_utc"), datetime):
+        data["timestamp_utc"] = data["timestamp_utc"].isoformat()
+    return data
+
+
+def _serialize_lag_record(record: LagRecord) -> dict:
+    """Serialize a LagRecord to a JSON-safe dict.
+
+    Converts ``timestamp_utc`` to an ISO-8601 string. LagRecord has no
+    bytes fields, so no base64 encoding is needed.
+
+    Args:
+        record: A :class:`~kafka_mcp.domain.models.LagRecord` domain object.
+
+    Returns:
+        Dict with all fields from ``model_dump()`` plus ``timestamp_utc``
+        as an ISO-8601 string.
+    """
+    data = record.model_dump()
     if isinstance(data.get("timestamp_utc"), datetime):
         data["timestamp_utc"] = data["timestamp_utc"].isoformat()
     return data
@@ -160,9 +191,7 @@ def _create_http_mcp_server(client: KafkaClient) -> FastMCP:
 
     @http_mcp.tool(
         name="describe_topic",
-        description=(
-            "Return partition metadata and watermark offsets for a single Kafka topic."
-        ),
+        description=("Return partition metadata and watermark offsets for a single Kafka topic."),
         annotations=_READ_ONLY,
     )
     def describe_topic(topic: str) -> dict:  # noqa: D401
@@ -210,9 +239,7 @@ def _create_http_mcp_server(client: KafkaClient) -> FastMCP:
 
     @http_mcp.tool(
         name="get_message",
-        description=(
-            "Fetch and decode a single Kafka message by topic, partition, and offset."
-        ),
+        description=("Fetch and decode a single Kafka message by topic, partition, and offset."),
         annotations=_READ_ONLY,
     )
     def get_message(topic: str, partition: int, offset: int) -> dict:  # noqa: D401
@@ -220,18 +247,26 @@ def _create_http_mcp_server(client: KafkaClient) -> FastMCP:
         try:
             return _serialize_message(client.get_message(topic, partition, offset))
         except MessageNotFoundError as exc:
-            raise ValueError(
-                f"Message not found: {exc.topic}[{exc.partition}]@{exc.offset}"
-            ) from exc
+            raise ValueError(f"Message not found: {exc.topic}[{exc.partition}]@{exc.offset}") from exc
         except TransientError as exc:
             raise ValueError(
-                f"Transient read failure: "
-                f"{exc.topic}[{exc.partition}]@{exc.offset}: {exc.reason}"
+                f"Transient read failure: {exc.topic}[{exc.partition}]@{exc.offset}: {exc.reason}"
             ) from exc
         except DecodeError as exc:
-            raise ValueError(
-                f"Decode failed: {exc.topic}[{exc.partition}]@{exc.offset}: {exc.reason}"
-            ) from exc
+            raise ValueError(f"Decode failed: {exc.topic}[{exc.partition}]@{exc.offset}: {exc.reason}") from exc
+
+    @http_mcp.tool(
+        name="consumer_group_lag",
+        description=(
+            "Report per-partition consumer lag (committed offset vs end offset) "
+            "for a given consumer group. Read-only — no commits, no group joins."
+        ),
+        annotations=_READ_ONLY,
+    )
+    def consumer_group_lag(group: str, topics: list[str] | None = None) -> list[dict]:  # noqa: D401
+        """Report per-partition lag for a consumer group."""
+        records = client.consumer_group_lag(group, topics)
+        return [_serialize_lag_record(r) for r in records]
 
     return http_mcp
 
@@ -244,6 +279,7 @@ def create_app(client: KafkaClient) -> FastAPI:
     - ``POST /tools/describe_topic``
     - ``POST /tools/search_messages``
     - ``POST /tools/get_message``
+    - ``POST /tools/consumer_group_lag``
     - ``/mcp`` — FastMCP streamable-HTTP MCP transport (HTTP-01)
 
     Args:
@@ -387,5 +423,15 @@ def create_app(client: KafkaClient) -> FastAPI:
                     "reason": exc.reason,
                 },
             ) from exc
+
+    @app.post("/tools/consumer_group_lag")
+    def _consumer_group_lag(req: ConsumerGroupLagRequest) -> dict:
+        """Report per-partition consumer lag for a consumer group.
+
+        Returns:
+            ``{"result": [...]}`` — list of LagRecord dicts.
+        """
+        records = client.consumer_group_lag(req.group, req.topics)
+        return {"result": [_serialize_lag_record(r) for r in records]}
 
     return app

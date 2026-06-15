@@ -1,10 +1,11 @@
 """MCP stdio inbound adapter — registers read-only Kafka tools via FastMCP.
 
-Exposes four tools that delegate to KafkaClient:
+Exposes five tools that delegate to KafkaClient:
   - list_topics: returns sorted list of topic names
   - describe_topic: returns TopicInfo metadata for a single topic
   - search_messages: search messages by key within a time window
   - get_message: fetch and decode a single message by coordinates
+  - consumer_group_lag: report per-partition consumer lag for a group
 
 All tools carry ``readOnlyHint=True`` on their ToolAnnotations (D-13, D-14).
 Defense-in-depth: the structural assign-based consumer (no subscribe/commit)
@@ -35,7 +36,7 @@ from kafka_mcp.domain.errors import (
     TopicNotFoundError,
     TransientError,
 )
-from kafka_mcp.domain.models import KafkaMessage
+from kafka_mcp.domain.models import KafkaMessage, LagRecord
 
 _READ_ONLY = ToolAnnotations(readOnlyHint=True)
 
@@ -64,6 +65,25 @@ def _serialize_message(msg: KafkaMessage) -> dict:
     return data
 
 
+def _serialize_lag_record(record: LagRecord) -> dict:
+    """Serialize a LagRecord to a JSON-safe dict.
+
+    Converts ``timestamp_utc`` to an ISO-8601 string. LagRecord has no
+    bytes fields, so no base64 encoding is needed.
+
+    Args:
+        record: A :class:`~kafka_mcp.domain.models.LagRecord` domain object.
+
+    Returns:
+        Dict with all fields from ``model_dump()`` plus ``timestamp_utc``
+        as an ISO-8601 string.
+    """
+    data = record.model_dump()
+    if isinstance(data.get("timestamp_utc"), datetime):
+        data["timestamp_utc"] = data["timestamp_utc"].isoformat()
+    return data
+
+
 def create_mcp_server(client: KafkaClient) -> FastMCP:
     """Build and return a FastMCP server wired to *client*.
 
@@ -72,6 +92,7 @@ def create_mcp_server(client: KafkaClient) -> FastMCP:
     - ``describe_topic`` — returns TopicInfo as dict
     - ``search_messages`` — returns list[dict] of KafkaMessage dicts
     - ``get_message`` — returns a single KafkaMessage dict
+    - ``consumer_group_lag`` — returns list[dict] of LagRecord dicts
 
     All tools have ``readOnlyHint=True`` per D-13/D-14.
 
@@ -192,18 +213,26 @@ def create_mcp_server(client: KafkaClient) -> FastMCP:
         try:
             return _serialize_message(client.get_message(topic, partition, offset))
         except MessageNotFoundError as exc:
-            raise ValueError(
-                f"Message not found: {exc.topic}[{exc.partition}]@{exc.offset}"
-            ) from exc
+            raise ValueError(f"Message not found: {exc.topic}[{exc.partition}]@{exc.offset}") from exc
         except TransientError as exc:
             # WR-05: in-range offset that timed out — transient, not absence.
             raise ValueError(
-                f"Transient read failure: "
-                f"{exc.topic}[{exc.partition}]@{exc.offset}: {exc.reason}"
+                f"Transient read failure: {exc.topic}[{exc.partition}]@{exc.offset}: {exc.reason}"
             ) from exc
         except DecodeError as exc:
-            raise ValueError(
-                f"Decode failed: {exc.topic}[{exc.partition}]@{exc.offset}: {exc.reason}"
-            ) from exc
+            raise ValueError(f"Decode failed: {exc.topic}[{exc.partition}]@{exc.offset}: {exc.reason}") from exc
+
+    @app.tool(
+        name="consumer_group_lag",
+        description=(
+            "Report per-partition consumer lag (committed offset vs end offset) "
+            "for a given consumer group. Read-only — no commits, no group joins."
+        ),
+        annotations=_READ_ONLY,
+    )
+    def consumer_group_lag(group: str, topics: list[str] | None = None) -> list[dict]:  # noqa: D401
+        """Report per-partition lag for a consumer group."""
+        records = client.consumer_group_lag(group, topics)
+        return [_serialize_lag_record(r) for r in records]
 
     return app

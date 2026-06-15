@@ -5,6 +5,7 @@ Subcommands:
   kafka-mcp describe-topic <topic> [--json]
   kafka-mcp search-messages --key <key> [options] [--json]
   kafka-mcp get-message <topic> <partition> <offset> [--json]
+  kafka-mcp consumer-group-lag --group <group> [--topics T1,T2] [--json]
 
 By default, output is formatted as a human-readable table.
 Pass ``--json`` for machine-readable orjson output.
@@ -45,7 +46,7 @@ from kafka_mcp.domain.errors import (
     TopicNotFoundError,
     TransientError,
 )
-from kafka_mcp.domain.models import KafkaMessage
+from kafka_mcp.domain.models import KafkaMessage, LagRecord
 
 # ---------------------------------------------------------------------------
 # Argument parser
@@ -159,6 +160,28 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Output as JSON instead of human-readable format.",
     )
 
+    # consumer-group-lag
+    cgl = subparsers.add_parser(
+        "consumer-group-lag",
+        help="Report per-partition consumer lag for a consumer group.",
+    )
+    cgl.add_argument(
+        "--group",
+        required=True,
+        help="Consumer group ID.",
+    )
+    cgl.add_argument(
+        "--topics",
+        default=None,
+        help="Comma-separated list of topic names. Defaults to all committed topics.",
+    )
+    cgl.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Output as JSON instead of table.",
+    )
+
     return parser
 
 
@@ -246,9 +269,7 @@ def run_describe_topic(
     print(f"{'Partition':>10}  {'Leader':>8}  {'Earliest':>12}  {'Latest':>12}")
     print("-" * 50)
     for p in info.partitions:
-        print(
-            f"{p.id:>10}  {p.leader:>8}  {p.earliest:>12}  {p.latest:>12}"
-        )
+        print(f"{p.id:>10}  {p.leader:>8}  {p.earliest:>12}  {p.latest:>12}")
 
 
 def _serialize_message_for_cli(msg: KafkaMessage) -> dict:
@@ -271,6 +292,25 @@ def _serialize_message_for_cli(msg: KafkaMessage) -> dict:
     if msg.raw_key is not None:
         data["raw_key"] = base64.b64encode(msg.raw_key).decode("ascii")
     # Convert datetime to ISO-8601 string for JSON compatibility
+    if isinstance(data.get("timestamp_utc"), datetime):
+        data["timestamp_utc"] = data["timestamp_utc"].isoformat()
+    return data
+
+
+def _serialize_lag_record_for_cli(record: LagRecord) -> dict:
+    """Serialize a LagRecord to a JSON-safe dict for CLI output.
+
+    Converts ``timestamp_utc`` to an ISO-8601 string. LagRecord has no
+    bytes fields, so no base64 encoding is needed.
+
+    Args:
+        record: A :class:`~kafka_mcp.domain.models.LagRecord` domain object.
+
+    Returns:
+        Dict with all fields from ``model_dump()`` plus ``timestamp_utc``
+        as an ISO-8601 string.
+    """
+    data = record.model_dump()
     if isinstance(data.get("timestamp_utc"), datetime):
         data["timestamp_utc"] = data["timestamp_utc"].isoformat()
     return data
@@ -341,9 +381,7 @@ def run_search_messages(
     col_topic = max(max(len(m.topic) for m in results), len("Topic"))
     col_part = max(len("Partition"), 9)
     col_off = max(len("Offset"), 6)
-    col_key = max(
-        max(len(str(m.key or "")) for m in results), len("Key"), 10
-    )
+    col_key = max(max(len(str(m.key or "")) for m in results), len("Key"), 10)
 
     header = (
         f"{'Timestamp':<{col_ts}}  "
@@ -399,15 +437,13 @@ def run_get_message(
     except TransientError as exc:
         # WR-05: in-range offset that timed out — transient, not a real absence.
         print(
-            f"Error: transient read failure for "
-            f"{exc.topic}[{exc.partition}]@{exc.offset}: {exc.reason}",
+            f"Error: transient read failure for {exc.topic}[{exc.partition}]@{exc.offset}: {exc.reason}",
             file=sys.stderr,
         )
         sys.exit(3)
     except DecodeError as exc:
         print(
-            f"Error: decode failed for "
-            f"{exc.topic}[{exc.partition}]@{exc.offset}: {exc.reason}",
+            f"Error: decode failed for {exc.topic}[{exc.partition}]@{exc.offset}: {exc.reason}",
             file=sys.stderr,
         )
         sys.exit(2)
@@ -431,6 +467,56 @@ def run_get_message(
         print(f"    {k}: {v}")
     val_str = str(msg.value)[:512] if msg.value is not None else "(none)"
     print(f"  Value         : {val_str}")
+
+
+def run_consumer_group_lag(
+    client: KafkaClient,
+    group: str,
+    topics: str | None = None,
+    as_json: bool = False,
+) -> None:
+    """Fetch and print per-partition consumer lag.
+
+    Args:
+        client: KafkaClient to query.
+        group: Consumer group ID.
+        topics: Optional comma-separated topic names string.
+        as_json: When True, print JSON; otherwise print a table.
+    """
+    # Parse comma-separated topics
+    topics_list: list[str] | None = None
+    if topics is not None:
+        topics_list = [t.strip() for t in topics.split(",") if t.strip()]
+
+    records = client.consumer_group_lag(group, topics_list)
+
+    if as_json:
+        serialized = [_serialize_lag_record_for_cli(r) for r in records]
+        print(orjson_dumps(serialized).decode())
+        return
+
+    if not records:
+        print("(no lag records)")
+        return
+
+    # Human-readable table: Group | Topic | Partition | Current | End | Lag
+    col_group = max(max(len(r.group) for r in records), len("Group"))
+    col_topic = max(max(len(r.topic) for r in records), len("Topic"))
+
+    header = (
+        f"{'Group':<{col_group}}  {'Topic':<{col_topic}}  {'Partition':>9}  {'Current':>10}  {'End':>10}  {'Lag':>10}"
+    )
+    print(header)
+    print("-" * len(header))
+    for r in records:
+        print(
+            f"{r.group:<{col_group}}  "
+            f"{r.topic:<{col_topic}}  "
+            f"{r.partition:>9}  "
+            f"{r.current_offset:>10}  "
+            f"{r.end_offset:>10}  "
+            f"{r.lag:>10}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -481,6 +567,13 @@ def main(argv: list[str] | None = None) -> None:
                 topic=ns.topic,
                 partition=ns.partition,
                 offset=ns.offset,
+                as_json=ns.json,
+            )
+        elif ns.subcommand == "consumer-group-lag":
+            run_consumer_group_lag(
+                client,
+                group=ns.group,
+                topics=ns.topics,
                 as_json=ns.json,
             )
         else:
