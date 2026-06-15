@@ -6,12 +6,12 @@
     "url": "https://github.com/mshegolev/kafka-mcp",
     "source": "github"
   },
-  "version": "0.1.0",
+  "version": "1.1.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "kafka-mcp",
-      "version": "0.1.0",
+      "version": "1.1.0",
       "transport": {
         "type": "stdio"
       },
