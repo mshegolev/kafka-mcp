@@ -26,41 +26,10 @@ live-published, real-broker-verified, with extended decode + new triage tooling
 — without breaking the v1.0 contract or the read-only guarantee.
 
 - [x] **Phase 4: Extended Decode & Transport** - Decode message keys via Schema Registry, surface schema_id on KafkaMessage across all four faces, and add HTTP transport entry to server.json (completed 2026-06-08)
-- [ ] **Phase 5: Consumer Lag Tooling** - New read-only consumer_group_lag tool exposing per-partition lag with Evidence fields, delivered identically across lib / MCP / FastAPI / CLI
-- [ ] **Phase 6: Real-Broker E2E Contour** - Testcontainers integration suite verifying all tools (including v1.1 surfaces) against a live Kafka broker + Schema Registry with real-wire decode
-- [ ] **Phase 7: Release Pipeline** - Verified tag-triggered CI publish workflow + documented RELEASE.md runbook covering PyPI upload and Glama submission steps
-
-## Phase Details
-
-### Phase 4: Extended Decode & Transport
-**Goal**: Users of all four faces can decode schema-encoded message keys, see schema_id on every KafkaMessage, and discover the FastAPI face as an MCP HTTP server via server.json
-**Depends on**: Phase 3 (v1.0 shipped)
-**Requirements**: KEY-01, KEY-02, HTTP-01
-**Success Criteria** (what must be TRUE):
-  1. `KafkaClient.get_message()` and `search_messages()` return a decoded key dict when the key is schema-encoded (Avro/Protobuf/JSON via Schema Registry), and fall back to the raw/string key without raising an error when the key is not schema-encoded
-  2. `KafkaMessage` carries a `schema_id` field (value schema id, and key schema id when key-decoded); the field appears identically in lib return value, MCP stdio tool response, FastAPI `/tools/*` JSON, and CLI output
-  3. `server.json` declares a streamable-HTTP transport entry in the `remotes` array whose declared endpoint matches the actual FastAPI `/mcp` route; verified by: `python -c "import json,pathlib; d=json.loads(pathlib.Path('server.json').read_text()); assert any(r.get('type')=='streamable-http' for r in d.get('remotes',[]))"` — NOTE: the real MCP server.json schema uses `remotes` (not `transports`) for streamable-HTTP transports; the original criterion's `d['transports']` assertion is incorrect and has been reconciled here.
-  4. The unit test suite passes with no regressions (existing `search_messages` / `get_message` tests for value decoding still green)
-**Plans**: 3 plans
-Plans:
-- [x] 04-01-PLAN.md — Add raw_key/key_decoded/schema_id fields to KafkaMessage; thread raw_key through confluent_consumer
-- [x] 04-02-PLAN.md — Implement key decode + schema_id extraction in search_service; update all four face serializers
-- [x] 04-03-PLAN.md — Mount FastMCP /mcp endpoint; declare HTTP transport in server.json remotes and glama.json
-**UI hint**: no
-
-### Phase 5: Consumer Lag Tooling
-**Goal**: Users can query per-partition consumer-group lag through any of the four faces; every lag row carries Investigator-Contract Evidence fields and the operation is structurally read-only
-**Depends on**: Phase 4
-**Requirements**: LAG-01, LAG-02, LAG-03
-**Success Criteria** (what must be TRUE):
-  1. `KafkaClient.consumer_group_lag(group, topics)` returns a list of lag records containing `group`, `topic`, `partition`, `current_offset`, `end_offset`, `lag`, and `timestamp_utc` — no offset commits or writes are performed (verified by `enable.auto.commit=false` + assign-only pattern)
-  2. The lag capability is reachable identically via MCP stdio tool `consumer_group_lag`, FastAPI `POST /tools/consumer_group_lag`, and `kafka-mcp consumer-group-lag` CLI subcommand — all return the same schema
-  3. `pytest -k consumer_group_lag` passes against the mock adapter suite (unit coverage for all four faces)
-  4. A `ToolAnnotations(readOnlyHint=True)` annotation is applied to the MCP tool, and the FastAPI route carries the same read-only declaration in its response model
-**Plans**: 2 plans
-Plans:
-- [ ] 05-01-PLAN.md — LagRecord model + ConsumerPort extension + ConfluentConsumerAdapter implementation + KafkaClient facade + adapter unit tests
-- [ ] 05-02-PLAN.md — All four inbound faces (MCP stdio, FastAPI REST, HTTP MCP, CLI) + server.py dispatch + full 4-face test suite
+- [x] **Phase 5: Consumer Lag Tooling** - New read-only consumer_group_lag tool exposing per-partition lag with Evidence fields, delivered identically across lib / MCP / FastAPI / CLI (completed 2026-06-16)
+  Plans:
+  - [x] 05-01-PLAN.md — LagRecord model + ConsumerPort extension + ConfluentConsumerAdapter implementation + KafkaClient facade + adapter unit tests
+  - [x] 05-02-PLAN.md — All four inbound faces (MCP stdio, FastAPI REST, HTTP MCP, CLI) + server.py dispatch + full 4-face test suite
 **UI hint**: no
 
 ### Phase 6: Real-Broker E2E Contour
@@ -95,6 +64,6 @@ Plans:
 | 2. Search + Decode | v1.0 | 5/5 | Complete | 2026-06-06 |
 | 3. Native + Ship | v1.0 | 3/3 | Complete | 2026-06-08 |
 | 4. Extended Decode & Transport | v1.1 | 3/3 | Complete   | 2026-06-08 |
-| 5. Consumer Lag Tooling | v1.1 | 0/2 | In progress | - |
+| 5. Consumer Lag Tooling | v1.1 | 2/2 | Complete | 2026-06-16 |
 | 6. Real-Broker E2E Contour | v1.1 | 0/TBD | Not started | - |
 | 7. Release Pipeline | v1.1 | 0/TBD | Not started | - |

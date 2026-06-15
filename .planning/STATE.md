@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Production-Ready & Extended
 status: executing
-last_updated: "2026-06-16T00:00:00.000Z"
+last_updated: "2026-06-16T01:00:00.000Z"
 last_activity: 2026-06-16
 progress:
   total_phases: 4
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
-  percent: 25
+  completed_phases: 2
+  total_plans: 5
+  completed_plans: 5
+  percent: 50
 ---
 
 # Project State
@@ -22,16 +22,16 @@ See: .planning/PROJECT.md (updated 2026-06-08)
 **Core value:** Read-only Kafka MCP brick — find events by key in a time window,
 decode Avro/Protobuf/JSON via Schema Registry, surface evidence for incident
 timelines. Library-first: works in pytest without MCP or FastAPI.
-**Current focus:** Phase 05 — Consumer Lag Tooling
+**Current focus:** Phase 06 — Real-Broker E2E Contour
 
 ## Current Position
 
-Phase: 05 (Consumer Lag Tooling) — STARTING
+Phase: 06 (Real-Broker E2E Contour) — STARTING
 Plan: 0 of TBD
-Status: Phase 4 verified and complete; starting Phase 5
+Status: Phase 5 verified and complete (298 tests, 4/4 SC); starting Phase 6
 Last activity: 2026-06-16
 
-Progress: [██░░░░░░░░] 25%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -71,7 +71,8 @@ None yet.
 
 ### Blockers/Concerns
 
-None. Phase 4 complete and verified. Phase 5 can begin immediately.
+None. Phases 4-5 complete and verified. Phase 6 can begin immediately.
+Note: Phase 6 requires Docker for testcontainers (Kafka + Schema Registry).
 
 ## Session Continuity
 
