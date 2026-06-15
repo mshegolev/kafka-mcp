@@ -56,7 +56,10 @@ Plans:
   2. `RELEASE.md` exists and documents: (a) tagging convention, (b) required GitHub/PyPI secrets setup, (c) how to verify the TestPyPI dry-run, (d) the manual Glama submission steps using `glama.json` / `server.json`
   3. `glama.json` and `server.json` accurately reflect the v1.1 artifact (updated tool list including `consumer_group_lag`, updated transport list including HTTP entry from Phase 4)
   4. `python -m twine check dist/*` passes locally after `hatch build`, confirming the distribution artifact is well-formed (human-gated: the actual live credentialed PyPI push and Glama account submission remain a human action and are explicitly out of scope)
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 07-01-PLAN.md — Release CI workflow (release.yml) + RELEASE.md runbook + local hatch build/twine check verification
+- [ ] 07-02-PLAN.md — Update glama.json (add consumer_group_lag tool) + server.json version bump to 1.1.0
 **UI hint**: no
 
 ## Progress
@@ -69,4 +72,4 @@ Plans:
 | 4. Extended Decode & Transport | v1.1 | 3/3 | Complete   | 2026-06-08 |
 | 5. Consumer Lag Tooling | v1.1 | 2/2 | Complete | 2026-06-16 |
 | 6. Real-Broker E2E Contour | v1.1 | 2/2 | Complete | 2026-06-16 |
-| 7. Release Pipeline | v1.1 | 0/TBD | Not started | - |
+| 7. Release Pipeline | v1.1 | 0/2 | Not started | - |
