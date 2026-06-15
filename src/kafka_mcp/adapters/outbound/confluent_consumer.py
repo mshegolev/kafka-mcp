@@ -189,7 +189,9 @@ class ConfluentConsumerAdapter:
             # round-trip, not a consumer.poll(); use the dedicated metadata
             # budget so broker latency / many partitions don't spuriously
             # raise (and then get mis-mapped to TopicNotFoundError).
-            low, high = self._consumer.get_watermark_offsets(topic, partition, timeout=_METADATA_TIMEOUT_SECONDS)
+            low, high = self._consumer.get_watermark_offsets(
+                TopicPartition(topic, partition), timeout=_METADATA_TIMEOUT_SECONDS
+            )
         except KafkaException as exc:
             # WR-04: only genuine unknown-topic / unknown-partition errors
             # mean "not found". Transient/operational failures (timeout,
