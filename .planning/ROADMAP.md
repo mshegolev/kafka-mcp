@@ -57,7 +57,10 @@ Plans:
   2. The lag capability is reachable identically via MCP stdio tool `consumer_group_lag`, FastAPI `POST /tools/consumer_group_lag`, and `kafka-mcp consumer-group-lag` CLI subcommand — all return the same schema
   3. `pytest -k consumer_group_lag` passes against the mock adapter suite (unit coverage for all four faces)
   4. A `ToolAnnotations(readOnlyHint=True)` annotation is applied to the MCP tool, and the FastAPI route carries the same read-only declaration in its response model
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 05-01-PLAN.md — LagRecord model + ConsumerPort extension + ConfluentConsumerAdapter implementation + KafkaClient facade + adapter unit tests
+- [ ] 05-02-PLAN.md — All four inbound faces (MCP stdio, FastAPI REST, HTTP MCP, CLI) + server.py dispatch + full 4-face test suite
 **UI hint**: no
 
 ### Phase 6: Real-Broker E2E Contour
