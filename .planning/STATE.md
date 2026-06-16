@@ -1,37 +1,37 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: Production-Ready & Extended
-status: complete
-last_updated: "2026-06-16T03:00:00.000Z"
+milestone: v1.2
+milestone_name: Cross-Topic Investigation
+status: planning
+last_updated: "2026-06-16T04:00:00.000Z"
 last_activity: 2026-06-16
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 9
-  completed_plans: 9
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-08)
+See: .planning/PROJECT.md (updated 2026-06-16)
 
 **Core value:** Read-only Kafka MCP brick — find events by key in a time window,
 decode Avro/Protobuf/JSON via Schema Registry, surface evidence for incident
 timelines. Library-first: works in pytest without MCP or FastAPI.
-**Current focus:** Milestone lifecycle — all phases complete
+**Current focus:** Milestone v1.2 — Cross-Topic Investigation
 
 ## Current Position
 
-Phase: All 4 v1.1 phases complete (4, 5, 6, 7)
-Plan: 9/9 complete
-Status: All phases verified; ready for milestone lifecycle
-Last activity: 2026-06-16
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-06-16 — Milestone v1.2 started
 
-Progress: [██████████] 100%
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
@@ -71,11 +71,10 @@ None yet.
 
 ### Blockers/Concerns
 
-None. Phases 4-5 complete and verified. Phase 6 can begin immediately.
-Note: Phase 6 requires Docker for testcontainers (Kafka + Schema Registry).
+None. Starting fresh milestone v1.2.
 
 ## Session Continuity
 
-Last session: 2026-06-15T19:42:39.259Z
-Stopped at: v1.1 roadmap created — ready for Phase 4 planning
+Last session: 2026-06-16
+Stopped at: Milestone v1.2 initialization
 Resume file: None

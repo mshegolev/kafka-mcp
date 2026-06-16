@@ -38,27 +38,28 @@ native/     Rust pyo3 — СКАН ПАРТИЦИЙ (реальный CPU-hotspo
 
 Anti: produce, consumer-group mgmt, exactly-once, broker config.
 
-## Current Milestone: v1.1 Production-Ready & Extended
+## Current Milestone: v1.2 Cross-Topic Investigation
 
-**Goal:** Take the read-only Kafka brick from prepared-MVP to live-published,
-real-broker-verified, with extended decode + new triage tooling — without
-breaking the v1.0 contract or the read-only guarantee.
+**Goal:** Enable investigators to trace entities across multiple Kafka topics
+by searching a key across topics simultaneously, filtering by message headers,
+extracting correlated IDs from message payloads/headers, and following those
+IDs into other topics to build cross-service event chains.
 
 **Target features:**
-- **Release** — live PyPI publish + Glama submission via the tagged-release CI
-  workflow (v1.0 prepared the artifacts; v1.1 makes the publish real).
-- **Real-broker E2E** — integration/E2E contour against a real Kafka broker +
-  Schema Registry (testcontainers), with real-wire round-trips for
-  search / get / decode (complements the mock-based v1.0 suite).
-- **Extended decode + transport** — decode message *keys* via Schema Registry,
-  surface `schema_id` on `KafkaMessage`, and add an HTTP transport entry in
-  `server.json`.
-- **Triage tooling** — a new read-only consumer-group **lag / offset** visibility
-  tool, exposed identically across all four faces (lib / MCP / FastAPI / CLI).
+- **Multi-topic search** — `search_messages` with `topics: list[str]` searches
+  across multiple topics in a single call, returning results merged and sorted
+  by timestamp.
+- **Header filtering** — `search_messages` gains `headers: dict[str, str]`
+  filter to match messages by header key-value pairs (trace_id, correlation_id).
+- **Correlation extraction** — New capability to extract correlated entity IDs
+  from search results (scan message values/headers for known ID fields).
+- **Correlation follow** — New `correlate_messages` tool that takes initial
+  search results, extracts linked IDs, and follows them into additional topics
+  to build a cross-service event chain.
 
 **Constraints:** Stays structurally read-only (no produce, no offset commits to
-prod groups). New tool honors the 4-face symmetry and the Investigator-Contract
-Evidence shape. Phase numbering continues from v1.0 (next is Phase 4).
+prod groups). New tools honor the 4-face symmetry and the Investigator-Contract
+Evidence shape. Phase numbering continues from v1.1 (next is Phase 8).
 
 ## ⭐ Investigator Contract (lib-фасад)
 
@@ -119,32 +120,28 @@ the option open for a future Rust drop-in without API change.
 
 ---
 
-## Current State (shipped v1.0 — 2026-06-08)
+## Current State (shipped v1.1 — 2026-06-16)
 
-v1.0 MVP is complete and verified. All 7 requirements (KAFKA-01..07) validated;
-3 phases, 12 plans, 205 passing tests, ruff clean. The brick exposes
-`list_topics`, `describe_topic`, `search_messages`, and `get_message` identically
-across four faces (lib `KafkaClient`, MCP stdio, FastAPI `/tools/*`, `kafka-mcp`
-CLI), with structural read-only enforcement, Avro/Protobuf/JSON decode via Schema
-Registry, and the Investigator-Contract Evidence fields. ~3,400 LOC src /
-~4,100 LOC tests (Python 3.10–3.12, hatchling). Distribution artifacts
-(glama.json, server.json, MIT LICENSE, CHANGELOG, GitHub Actions CI) are prepared;
-the live PyPI/Glama publish is gated on a human-triggered tagged release.
+v1.1 shipped on v1.0's foundation. 323 passing tests (298 unit + 25 integration).
+5 tools across 4 faces: `list_topics`, `describe_topic`, `search_messages`,
+`get_message`, `consumer_group_lag`. Key decode via Schema Registry, schema_id
+surfacing, HTTP transport in server.json, testcontainers E2E suite, CI release
+pipeline with TestPyPI dry-run, RELEASE.md runbook.
 
-**Validated requirements:** KAFKA-01 (list_topics), KAFKA-04 (describe_topic),
-KAFKA-06 (read-only) — v1.0 Phase 1; KAFKA-02 (search_messages), KAFKA-03
-(get_message), KAFKA-05 (decode) — v1.0 Phase 2; KAFKA-07 (benchmark-gated Rust,
-resolved to pure-Python) — v1.0 Phase 3.
+**Validated requirements (v1.0):** KAFKA-01..07 — all validated.
+**Validated requirements (v1.1):** KEY-01, KEY-02, HTTP-01 (Phase 4);
+LAG-01, LAG-02, LAG-03 (Phase 5); E2E-01, E2E-02, E2E-03 (Phase 6);
+REL-01, REL-02 (Phase 7).
 
-## Active Milestone: v1.1 (in progress)
+## Active Milestone: v1.2 (in progress)
 
-v1.1 is scoped (see Current Milestone above). All four candidate areas were
-promoted into scope: live publish, real-broker E2E, extended decode + HTTP
-transport, and consumer-lag tooling. Requirements are tracked in
-`REQUIREMENTS.md`; phases in `ROADMAP.md` (Phase 4+).
+v1.2 adds cross-topic investigation capabilities. The investigator workflow
+evolves from "search one topic for a key" to "trace an entity across the entire
+service topology": multi-topic search, header filtering, correlation extraction,
+and follow-up chasing. Requirements in `REQUIREMENTS.md`; phases in `ROADMAP.md`.
 
-Out of scope for v1.1: Rust scanner (remains gated on a future CPU-bound
-benchmark, not anticipated), produce/write paths, consumer-group management.
+Out of scope for v1.2: Rust scanner (I/O-bound, KAFKA-07), produce/write paths,
+consumer-group management, timeline visualization (data-only, not rendering).
 
 ## Evolution
 
@@ -166,4 +163,4 @@ This document evolves at phase transitions and milestone boundaries.
 ---
 *Brick brief — запускай агента здесь и реализуй методы из Investigator Contract.*
 
-*Last updated: 2026-06-08 — milestone v1.1 started*
+*Last updated: 2026-06-16 — milestone v1.2 started*
