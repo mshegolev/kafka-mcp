@@ -1,70 +1,69 @@
-# Requirements: kafka-mcp — Milestone v1.1
+# Requirements: kafka-mcp — Milestone v1.2
 
-**Defined:** 2026-06-08
+**Defined:** 2026-06-16
 **Core Value:** Read-only Kafka MCP brick — find events by key in a time window,
 decode Avro/Protobuf/JSON via Schema Registry, surface evidence for incident
 timelines. Library-first: works in pytest without MCP or FastAPI.
 
-> v1.0 (KAFKA-01..07) shipped 2026-06-08 — see PROJECT.md and
-> `milestones/v1.0-ROADMAP.md`. v1.1 extends that contract without breaking it.
+> v1.0 (KAFKA-01..07) shipped 2026-06-08. v1.1 (KEY-01..03, HTTP-01, LAG-01..03,
+> E2E-01..03, REL-01..02) shipped 2026-06-16. v1.2 extends the investigation
+> workflow from single-topic search to cross-topic entity tracing.
 
-## v1.1 Requirements
+## v1.2 Requirements
 
-Requirements for the v1.1 release. Each maps to exactly one roadmap phase.
+Requirements for the v1.2 release. Each maps to exactly one roadmap phase.
 
-### Release (REL)
+### Multi-topic search (MTS)
 
-- [ ] **REL-01**: Pushing a `v*` git tag triggers a CI job that builds the
-  sdist + wheels and publishes to PyPI; the publish step is verified end-to-end
-  against TestPyPI (dry-run upload succeeds) so a maintainer's real tag push
-  publishes without further code changes.
-- [x] **REL-02**: A maintainer can register the server on Glama from the
-  in-repo metadata (`glama.json` / `server.json`) following a documented release
-  runbook (`RELEASE.md`) that covers tagging, credential/secret setup, and the
-  Glama submission steps.
+- [ ] **MTS-01**: `search_messages` accepts `topics: list[str]` (in addition to
+  the existing single-topic path) and returns results merged and sorted by
+  `timestamp_utc` across all specified topics in a single call.
+- [ ] **MTS-02**: Multi-topic search preserves all existing single-topic behavior
+  (key filter, `time_from`/`time_to`, `limit`, Avro/Protobuf/JSON decode) with
+  no regressions — existing callers passing a single topic see identical results.
 
-### Real-broker E2E (E2E)
+### Header filtering (HDR)
 
-- [ ] **E2E-01**: An integration test contour boots a real Kafka broker + Schema
-  Registry (testcontainers) and is runnable via a dedicated marked pytest target
-  (e.g. `-m integration`), skipped by default so the unit suite stays hermetic.
-- [ ] **E2E-02**: Real-wire round-trip tests verify `list_topics`,
-  `describe_topic`, `search_messages`, and `get_message` against the live broker,
-  reading messages seeded by a test-only producer — the brick's own paths remain
-  read-only (assign-only, no commits to prod groups).
-- [ ] **E2E-03**: Real-wire decode tests verify Avro, Protobuf, and JSON message
-  decoding against the live Schema Registry (not mocks), covering at least one
-  schema-encoded round-trip per format.
+- [ ] **HDR-01**: `search_messages` accepts an optional `headers: dict[str, str]`
+  parameter to filter messages whose Kafka headers contain all specified
+  key-value pairs (e.g. `headers={"trace_id": "abc-123"}`).
+- [ ] **HDR-02**: Header filtering combines with the existing key + time window +
+  topics filters using AND semantics — a message must match all active filters
+  to appear in results.
 
-### Extended decode & transport (KEY / HTTP)
+### Correlation (COR)
 
-- [x] **KEY-01**: `search_messages` and `get_message` decode the message **key**
-  via Schema Registry when the key is schema-encoded, falling back to the raw /
-  string key when it is not (no crash on plain keys).
-- [x] **KEY-02**: `KafkaMessage` surfaces the Schema Registry `schema_id` for the
-  decoded value (and key when key-decoded), exposed identically across all four
-  faces.
-- [x] **HTTP-01**: `server.json` declares a streamable-HTTP transport entry
-  alongside stdio, so the FastAPI face is discoverable as an MCP HTTP server; the
-  declared endpoint matches the actual FastAPI route.
+- [ ] **COR-01**: A new `correlate_messages` capability accepts initial search
+  results (or a starting key + topics) and extracts correlated entity IDs by
+  scanning message values and headers for configurable ID field patterns
+  (e.g. `trace_id`, `order_id`, `parent_id`).
+- [ ] **COR-02**: `correlate_messages` follows extracted IDs into additional
+  topics (specified or auto-discovered from the data) to build a cross-service
+  event chain, returning all correlated messages merged and sorted by timestamp.
+- [ ] **COR-03**: Correlation output carries Investigator-Contract Evidence fields
+  (`source="kafka"`, `event_type="correlated_message"`, `timestamp_utc`, keys)
+  and includes a `correlation_chain` field linking each message to the ID path
+  that discovered it, so each result is usable as a timeline data point.
 
-### Triage tooling — consumer lag (LAG)
+### 4-face symmetry (SYM)
 
-- [ ] **LAG-01**: A new read-only `consumer_group_lag` capability reports per
-  topic/partition lag (committed offset vs end offset) for a given consumer
-  group, with no writes and no commits to that group.
-- [ ] **LAG-02**: The lag capability is exposed identically across all four faces
-  (lib `KafkaClient.consumer_group_lag(...)`, MCP stdio tool, FastAPI
-  `/tools/consumer_group_lag`, and the `kafka-mcp` CLI subcommand).
-- [ ] **LAG-03**: Lag output carries Investigator-Contract-style evidence fields
-  (`group`, `topic`, `partition`, `current_offset`, `end_offset`, `lag`,
-  `timestamp_utc`) so each row is usable as a timeline data point.
+- [ ] **SYM-01**: All new and extended capabilities (multi-topic search, header
+  filter, `correlate_messages`) are exposed identically across lib `KafkaClient`,
+  MCP stdio tool, FastAPI `/tools/*` POST endpoint, and `kafka-mcp` CLI
+  subcommand — all return the same schema.
 
 ## Future Requirements
 
 Deferred to a later milestone. Tracked but not in this roadmap.
 
-### Decode / Transport
+### Correlation — advanced
+
+- **COR-04**: Recursive correlation depth control — limit how many hops
+  `correlate_messages` follows to prevent unbounded fan-out.
+- **COR-05**: Correlation caching — cache extracted ID mappings to speed
+  repeated correlation queries for the same entity.
+
+### Decode / Transport (carried from v1.1)
 
 - **KEY-03**: Cache Schema Registry schema lookups to cut per-message registry
   round-trips on large scans.
@@ -72,14 +71,16 @@ Deferred to a later milestone. Tracked but not in this roadmap.
 
 ## Out of Scope
 
-Explicitly excluded for v1.1. Documented to prevent scope creep.
+Explicitly excluded for v1.2. Documented to prevent scope creep.
 
 | Feature | Reason |
 |---------|--------|
-| Actual live credentialed PyPI publish + Glama account submission | Outward-facing, requires maintainer credentials and a human tag push — REL-01/REL-02 deliver the verified pipeline + runbook; the live push stays a human action (v1.0 "prepare-don't-live-publish" posture). |
-| Rust native scanner | Gated on a future CPU-bound benchmark; v1.0 benchmark proved the scan is I/O-bound (KAFKA-07). Not anticipated. |
-| Produce / write paths, offset-commit management | Violates the read-only guarantee — the brick is read-only by design. |
-| Consumer-group lifecycle management (create/delete/reset offsets) | Write operations; out of the read-only contract. LAG is read-only reporting only. |
+| Timeline visualization / rendering | v1.2 provides the data; rendering is a UI concern outside the brick |
+| Produce / write paths | Violates the read-only guarantee |
+| Consumer-group management | Write operations; out of the read-only contract |
+| Rust native scanner | Gated on a future CPU-bound benchmark (KAFKA-07, I/O-bound) |
+| Auto-discovery of all topics for correlation | Risk of unbounded fan-out; v1.2 requires explicit topic lists |
+| Recursive multi-hop correlation (>1 hop depth) | Deferred to COR-04; v1.2 supports single-hop follow from initial results |
 
 ## Traceability
 
@@ -87,23 +88,19 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| KEY-01 | Phase 4 | Complete |
-| KEY-02 | Phase 4 | Complete |
-| HTTP-01 | Phase 4 | Complete |
-| LAG-01 | Phase 5 | Pending |
-| LAG-02 | Phase 5 | Pending |
-| LAG-03 | Phase 5 | Pending |
-| E2E-01 | Phase 6 | Pending |
-| E2E-02 | Phase 6 | Pending |
-| E2E-03 | Phase 6 | Pending |
-| REL-01 | Phase 7 | Pending |
-| REL-02 | Phase 7 | Complete |
+| MTS-01 | TBD | Pending |
+| MTS-02 | TBD | Pending |
+| HDR-01 | TBD | Pending |
+| HDR-02 | TBD | Pending |
+| COR-01 | TBD | Pending |
+| COR-02 | TBD | Pending |
+| COR-03 | TBD | Pending |
+| SYM-01 | TBD | Pending |
 
 **Coverage:**
-- v1.1 requirements: 11 total
-- Mapped to phases: 11 ✓
-- Unmapped: 0 ✓
+- v1.2 requirements: 8 total
+- Mapped to phases: 0 (pending roadmap)
+- Unmapped: 8
 
 ---
-*Requirements defined: 2026-06-08*
-*Last updated: 2026-06-08 after roadmap creation (Phases 4–7 assigned)*
+*Requirements defined: 2026-06-16*
