@@ -58,7 +58,7 @@ Plans:
   4. `python -m twine check dist/*` passes locally after `hatch build`, confirming the distribution artifact is well-formed (human-gated: the actual live credentialed PyPI push and Glama account submission remain a human action and are explicitly out of scope)
 **Plans**: 2 plans
 Plans:
-- [ ] 07-01-PLAN.md — Release CI workflow (release.yml) + RELEASE.md runbook + local hatch build/twine check verification
+- [x] 07-01-PLAN.md — Release CI workflow (release.yml) + RELEASE.md runbook + local hatch build/twine check verification
 - [x] 07-02-PLAN.md — Update glama.json (add consumer_group_lag tool) + server.json version bump to 1.1.0
 **UI hint**: no
 
@@ -72,4 +72,4 @@ Plans:
 | 4. Extended Decode & Transport | v1.1 | 3/3 | Complete   | 2026-06-08 |
 | 5. Consumer Lag Tooling | v1.1 | 2/2 | Complete | 2026-06-16 |
 | 6. Real-Broker E2E Contour | v1.1 | 2/2 | Complete | 2026-06-16 |
-| 7. Release Pipeline | v1.1 | 1/2 | In Progress|  |
+| 7. Release Pipeline | v1.1 | 2/2 | Complete | 2026-06-16 |
