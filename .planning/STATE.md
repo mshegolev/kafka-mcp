@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Cross-Topic Investigation
 status: planning
-last_updated: "2026-06-16T04:00:00.000Z"
+last_updated: "2026-06-16T05:00:00.000Z"
 last_activity: 2026-06-16
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -26,10 +26,10 @@ timelines. Library-first: works in pytest without MCP or FastAPI.
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Phase 8 (Multi-Topic Search & Header Filtering) — not started
 Plan: —
-Status: Defining requirements
-Last activity: 2026-06-16 — Milestone v1.2 started
+Status: Roadmap created, ready for plan-phase
+Last activity: 2026-06-16 — v1.2 roadmap created (3 phases, 8 requirements)
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -64,6 +64,7 @@ Progress: [░░░░░░░░░░] 0%
 - [v1.0] Rust scanner NOT added — I/O-bound benchmark result (KAFKA-07)
 - [v1.0] "Prepare-don't-live-publish" posture: REL phases deliver verified pipeline + runbook; live push is human-gated
 - [v1.1] Key lesson carried in: declare + install deps in the same change to avoid CI-only conflicts
+- [v1.2] Phase 8 extends search_messages (additive params); Phase 9 adds correlate_messages (new domain service); Phase 10 wires 4-face symmetry
 
 ### Pending Todos
 
@@ -71,10 +72,11 @@ None yet.
 
 ### Blockers/Concerns
 
-None. Starting fresh milestone v1.2.
+None. v1.2 roadmap created; ready for plan-phase.
 
 ## Session Continuity
 
 Last session: 2026-06-16
-Stopped at: Milestone v1.2 initialization
+Stopped at: v1.2 roadmap created — 3 phases (8–10), 8 requirements mapped
 Resume file: None
+Next action: `/gsd-plan-phase 8`

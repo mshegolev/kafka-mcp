@@ -84,23 +84,23 @@ Explicitly excluded for v1.2. Documented to prevent scope creep.
 
 ## Traceability
 
-Which phases cover which requirements. Populated during roadmap creation.
+Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MTS-01 | TBD | Pending |
-| MTS-02 | TBD | Pending |
-| HDR-01 | TBD | Pending |
-| HDR-02 | TBD | Pending |
-| COR-01 | TBD | Pending |
-| COR-02 | TBD | Pending |
-| COR-03 | TBD | Pending |
-| SYM-01 | TBD | Pending |
+| MTS-01 | Phase 8: Multi-Topic Search & Header Filtering | Pending |
+| MTS-02 | Phase 8: Multi-Topic Search & Header Filtering | Pending |
+| HDR-01 | Phase 8: Multi-Topic Search & Header Filtering | Pending |
+| HDR-02 | Phase 8: Multi-Topic Search & Header Filtering | Pending |
+| COR-01 | Phase 9: Correlation Engine | Pending |
+| COR-02 | Phase 9: Correlation Engine | Pending |
+| COR-03 | Phase 9: Correlation Engine | Pending |
+| SYM-01 | Phase 10: 4-Face Symmetry & Integration Tests | Pending |
 
 **Coverage:**
 - v1.2 requirements: 8 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 8
+- Mapped to phases: 8/8 ✓
+- Unmapped: 0
 
 ---
-*Requirements defined: 2026-06-16*
+*Requirements defined: 2026-06-16 | Traceability updated: 2026-06-16*
