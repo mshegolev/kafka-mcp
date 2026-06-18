@@ -237,6 +237,39 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Maximum number of correlated messages to return (default 500).",
     )
     cm.add_argument(
+        "--regex-patterns",
+        dest="regex_patterns",
+        default=None,
+        help="Comma-separated list of regex patterns for ID extraction.",
+    )
+    cm.add_argument(
+        "--jsonpath-expressions",
+        dest="jsonpath_expressions",
+        default=None,
+        help="Comma-separated list of JSONPath expressions for ID extraction.",
+    )
+    cm.add_argument(
+        "--max-depth",
+        dest="max_depth",
+        type=int,
+        default=None,
+        help="Maximum correlation depth.",
+    )
+    cm.add_argument(
+        "--max-breadth",
+        dest="max_breadth",
+        type=int,
+        default=None,
+        help="Maximum correlation breadth per level.",
+    )
+    cm.add_argument(
+        "--bidirectional",
+        dest="bidirectional",
+        action="store_true",
+        default=False,
+        help="Enable backward correlation traversal.",
+    )
+    cm.add_argument(
         "--json",
         action="store_true",
         default=False,
@@ -284,7 +317,7 @@ def run_list_topics(
     topics = client.list_topics(include_internal=include_internal)
 
     if as_json:
-        print(orjson_dumps(topics).decode())
+        print(orjson_dumps({"result": topics}).decode())
         return
 
     if not topics:
@@ -603,6 +636,11 @@ def run_correlate_messages(
     time_from_str: str | None = None,
     time_to_str: str | None = None,
     limit: int = 500,
+    regex_patterns: str | None = None,
+    jsonpath_expressions: str | None = None,
+    max_depth: int | None = None,
+    max_breadth: int | None = None,
+    bidirectional: bool = False,
     as_json: bool = False,
 ) -> None:
     """Correlate messages by following extracted IDs into additional topics.
@@ -616,6 +654,11 @@ def run_correlate_messages(
         time_from_str: Optional ISO8601 datetime string for start of window.
         time_to_str: Optional ISO8601 datetime string for end of window.
         limit: Maximum number of correlated messages (default 500).
+        regex_patterns: Optional comma-separated regex patterns for ID extraction.
+        jsonpath_expressions: Optional comma-separated JSONPath expressions for ID extraction.
+        max_depth: Optional maximum correlation depth.
+        max_breadth: Optional maximum correlation breadth per level.
+        bidirectional: Enable backward correlation traversal.
         as_json: When True, print JSON; otherwise print a table.
     """
     # Parse datetime strings
@@ -642,6 +685,16 @@ def run_correlate_messages(
         print("Error: --follow-topics is required", file=sys.stderr)
         sys.exit(1)
 
+    # Parse comma-separated regex patterns
+    regex_patterns_list: list[str] | None = None
+    if regex_patterns is not None:
+        regex_patterns_list = [p.strip() for p in regex_patterns.split(",") if p.strip()]
+
+    # Parse comma-separated JSONPath expressions
+    jsonpath_expressions_list: list[str] | None = None
+    if jsonpath_expressions is not None:
+        jsonpath_expressions_list = [e.strip() for e in jsonpath_expressions.split(",") if e.strip()]
+
     # Perform initial search
     initial_results = client.search_messages(
         key,
@@ -657,11 +710,16 @@ def run_correlate_messages(
         initial_results=initial_results,
         follow_topics=follow_topics_list,
         limit=limit,
+        regex_patterns=regex_patterns_list,
+        jsonpath_expressions=jsonpath_expressions_list,
+        max_depth=max_depth,
+        max_breadth=max_breadth,
+        bidirectional=bidirectional,
     )
 
     if as_json:
         serialized = [_serialize_message_for_cli(m) for m in correlated_results]
-        print(orjson_dumps(serialized).decode())
+        print(orjson_dumps({"result": serialized}).decode())
         return
 
     # Human-readable table
@@ -770,6 +828,11 @@ def main(argv: list[str] | None = None) -> None:
                 time_from_str=ns.time_from,
                 time_to_str=ns.time_to,
                 limit=ns.limit,
+                regex_patterns=ns.regex_patterns,
+                jsonpath_expressions=ns.jsonpath_expressions,
+                max_depth=ns.max_depth,
+                max_breadth=ns.max_breadth,
+                bidirectional=ns.bidirectional,
                 as_json=ns.json,
             )
         else:

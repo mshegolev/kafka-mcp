@@ -113,11 +113,21 @@ class CorrelateMessagesRequest(BaseModel):
     ``initial_results`` are the messages to extract correlation IDs from.
     ``follow_topics`` are the topics to search for correlated messages.
     ``limit`` is constrained to 1–10000 to prevent DoS.
+    ``regex_patterns`` are optional regex patterns for ID extraction.
+    ``jsonpath_expressions`` are optional JSONPath expressions for ID extraction.
+    ``max_depth`` is the optional maximum correlation depth.
+    ``max_breadth`` is the optional maximum correlation breadth per level.
+    ``bidirectional`` enables backward correlation traversal.
     """
 
     initial_results: list[dict]
     follow_topics: list[str]
     limit: int = Field(default=500, ge=1, le=10000)
+    regex_patterns: list[str] | None = None
+    jsonpath_expressions: list[str] | None = None
+    max_depth: int | None = None
+    max_breadth: int | None = None
+    bidirectional: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -523,6 +533,11 @@ def create_app(client: KafkaClient) -> FastAPI:
             initial_results=initial_results,
             follow_topics=req.follow_topics,
             limit=req.limit,
+            regex_patterns=req.regex_patterns,
+            jsonpath_expressions=req.jsonpath_expressions,
+            max_depth=req.max_depth,
+            max_breadth=req.max_breadth,
+            bidirectional=req.bidirectional,
         )
         return {"result": [_serialize_message(m) for m in results]}
 

@@ -44,6 +44,7 @@ and safe:
 | `describe_topic` | Partition count and current low/high offsets for a topic. |
 | `get_message` | Retrieve a single message by `topic` / `partition` / `offset`. |
 | `search_messages` | Find messages by exact key within a time window; decoded via Schema Registry. |
+| `correlate_messages` | Correlate messages across topics by following extracted IDs with advanced pattern matching. |
 
 All tools are read-only (`readOnlyHint=true`).
 
@@ -85,6 +86,28 @@ kafka-mcp serve         # see --help for host/port
 # CLI subcommands:
 kafka-mcp list-topics
 kafka-mcp search-messages --key 79991234567 --since 2026-06-01T00:00:00Z
+kafka-mcp correlate-messages --key order-123 --follow-topics payments,shipments --bidirectional
+```
+
+### Advanced Correlation Features
+
+The `correlate_messages` tool supports advanced correlation patterns:
+
+```bash
+# Regex pattern matching for ID extraction
+kafka-mcp correlate-messages --key order-123 \
+  --follow-topics payments,shipments \
+  --regex-patterns '"traceId":"([^"]+)"'
+
+# Bidirectional correlation traversal
+kafka-mcp correlate-messages --key error-456 \
+  --follow-topics orders,payments,shipments \
+  --bidirectional
+
+# Limit correlation depth and breadth
+kafka-mcp correlate-messages --key order-123 \
+  --follow-topics orders,payments,shipments \
+  --max-depth 5 --max-breadth 10
 ```
 
 ### Library import

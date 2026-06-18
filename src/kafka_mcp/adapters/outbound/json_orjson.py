@@ -33,14 +33,14 @@ def orjson_loads(data: bytes | str) -> dict:
     return orjson.loads(data)
 
 
-def orjson_dumps(obj: dict) -> bytes:
-    """Serialise a Python dict to compact JSON bytes.
+def orjson_dumps(obj: dict | list) -> bytes:
+    """Serialise a Python dict or list to compact JSON bytes.
 
     orjson produces compact output (no spaces after ``:`` or ``,``), which
     is the canonical wire format used across adapters.
 
     Args:
-        obj: Python dict to serialise.
+        obj: Python dict or list to serialise.
 
     Returns:
         UTF-8 encoded JSON bytes.

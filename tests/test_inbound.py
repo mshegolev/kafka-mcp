@@ -248,7 +248,8 @@ def test_cli_list_topics_json() -> None:
     from kafka_mcp.adapters.inbound.cli import run_list_topics
 
     output = _capture_run(run_list_topics, MockKafkaClient(), as_json=True)
-    topics = orjson.loads(output)
+    result = orjson.loads(output)
+    topics = result["result"] if isinstance(result, dict) and "result" in result else result
     assert "payments" in topics
     assert "orders" in topics
 

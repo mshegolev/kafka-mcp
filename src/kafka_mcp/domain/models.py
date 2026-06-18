@@ -7,7 +7,7 @@ used across all inbound and outbound adapters.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -82,6 +82,10 @@ class KafkaMessage(BaseModel):
     correlation_chain: list[str] = Field(
         default_factory=list,
         description=("Chain of IDs that led to discovery of this message."),
+    )
+    correlation_details: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description=("Detailed information about each correlation step including direction and pattern used."),
     )
 
 

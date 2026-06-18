@@ -241,6 +241,11 @@ SchemaRegistryHttpAdapter`.
         initial_results: list[KafkaMessage],
         follow_topics: list[str],
         limit: int = 500,
+        regex_patterns: list[str] | None = None,
+        jsonpath_expressions: list[str] | None = None,
+        max_depth: int | None = None,
+        max_breadth: int | None = None,
+        bidirectional: bool = False,
     ) -> list[KafkaMessage]:
         """Correlate messages by following extracted IDs into additional topics.
 
@@ -253,6 +258,11 @@ SchemaRegistryHttpAdapter`.
             initial_results: Initial search results to extract correlation IDs from.
             follow_topics: List of topic names to search for correlated messages.
             limit: Maximum number of total correlated messages to return.
+            regex_patterns: Optional list of regex patterns for ID extraction.
+            jsonpath_expressions: Optional list of JSONPath expressions for ID extraction.
+            max_depth: Optional maximum correlation depth (default: unlimited).
+            max_breadth: Optional maximum correlation breadth per level (default: unlimited).
+            bidirectional: Whether to enable backward correlation traversal.
 
         Returns:
             List of KafkaMessage objects with correlation_chain populated,
@@ -262,6 +272,11 @@ SchemaRegistryHttpAdapter`.
             initial_results=initial_results,
             follow_topics=follow_topics,
             limit=limit,
+            regex_patterns=regex_patterns,
+            jsonpath_expressions=jsonpath_expressions,
+            max_depth=max_depth,
+            max_breadth=max_breadth,
+            bidirectional=bidirectional,
         )
 
     # ------------------------------------------------------------------

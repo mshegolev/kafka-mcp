@@ -250,6 +250,11 @@ def create_mcp_server(client: KafkaClient) -> FastMCP:
         initial_results_data: list[dict],
         follow_topics: list[str],
         limit: int = 500,
+        regex_patterns: list[str] | None = None,
+        jsonpath_expressions: list[str] | None = None,
+        max_depth: int | None = None,
+        max_breadth: int | None = None,
+        bidirectional: bool = False,
     ) -> list[dict]:  # noqa: D401
         """Correlate messages by following extracted IDs into additional topics."""
         # Convert dict data back to KafkaMessage objects
@@ -274,6 +279,11 @@ def create_mcp_server(client: KafkaClient) -> FastMCP:
             initial_results=initial_results,
             follow_topics=follow_topics,
             limit=limit,
+            regex_patterns=regex_patterns,
+            jsonpath_expressions=jsonpath_expressions,
+            max_depth=max_depth,
+            max_breadth=max_breadth,
+            bidirectional=bidirectional,
         )
         return [_serialize_message(m) for m in results]
 
