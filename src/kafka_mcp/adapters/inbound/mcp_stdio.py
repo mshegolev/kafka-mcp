@@ -147,6 +147,7 @@ def create_mcp_server(client: KafkaClient) -> FastMCP:
         key: str,
         key_field: str | None = None,
         topics: list[str] | None = None,
+        headers: dict[str, str] | None = None,
         time_from: str | None = None,
         time_to: str | None = None,
         limit: int = 500,
@@ -158,6 +159,7 @@ def create_mcp_server(client: KafkaClient) -> FastMCP:
             key_field: Optional match field — None/"key" for message key,
                 "header:<name>" for header, "value:<dotted.path>" for value field.
             topics: Optional list of topic names to scan. Defaults to all topics.
+            headers: Optional dict of header key-value pairs to filter by.
             time_from: Optional ISO8601 datetime string for the start of the
                 time window. Defaults to earliest available messages.
             time_to: Optional ISO8601 datetime string for the end of the
@@ -180,6 +182,7 @@ def create_mcp_server(client: KafkaClient) -> FastMCP:
             key,
             key_field=key_field,
             topics=topics,
+            headers=headers,
             time_from=tf,
             time_to=tt,
             limit=limit,
@@ -234,5 +237,44 @@ def create_mcp_server(client: KafkaClient) -> FastMCP:
         """Report per-partition lag for a consumer group."""
         records = client.consumer_group_lag(group, topics)
         return [_serialize_lag_record(r) for r in records]
+
+    @app.tool(
+        name="correlate_messages",
+        description=(
+            "Correlate messages by following extracted IDs from initial results into additional topics. "
+            "Returns correlated messages with correlation_chain populated."
+        ),
+        annotations=_READ_ONLY,
+    )
+    def correlate_messages(
+        initial_results_data: list[dict],
+        follow_topics: list[str],
+        limit: int = 500,
+    ) -> list[dict]:  # noqa: D401
+        """Correlate messages by following extracted IDs into additional topics."""
+        # Convert dict data back to KafkaMessage objects
+        from kafka_mcp.domain.models import KafkaMessage
+        import base64
+
+        initial_results: list[KafkaMessage] = []
+        for msg_data in initial_results_data:
+            # Handle base64 decoding of raw fields
+            if "raw" in msg_data and isinstance(msg_data["raw"], str):
+                msg_data["raw"] = base64.b64decode(msg_data["raw"])
+            if "raw_key" in msg_data and isinstance(msg_data["raw_key"], str):
+                msg_data["raw_key"] = base64.b64decode(msg_data["raw_key"])
+            # Handle timestamp parsing
+            if "timestamp_utc" in msg_data and isinstance(msg_data["timestamp_utc"], str):
+                from datetime import datetime, timezone
+
+                msg_data["timestamp_utc"] = datetime.fromisoformat(msg_data["timestamp_utc"].replace("Z", "+00:00"))
+            initial_results.append(KafkaMessage(**msg_data))
+
+        results = client.correlate_messages(
+            initial_results=initial_results,
+            follow_topics=follow_topics,
+            limit=limit,
+        )
+        return [_serialize_message(m) for m in results]
 
     return app

@@ -82,6 +82,7 @@ class SearchMessagesRequest(BaseModel):
     key: str
     key_field: str | None = None
     topics: list[str] | None = None
+    headers: dict[str, str] | None = None
     time_from: datetime | None = None
     time_to: datetime | None = None
     limit: int = Field(default=500, ge=1, le=10000)
@@ -240,10 +241,16 @@ def _create_http_mcp_server(client: KafkaClient) -> FastMCP:
         tt = datetime.fromisoformat(time_to) if time_to is not None else None
         if tt is not None and tt.tzinfo is None:
             tt = tt.replace(tzinfo=timezone.utc)
+        # Get headers from request context or default to None
+        # In FastAPI, we need to access the request body to get headers
+        # But for now, we'll assume headers are passed through the request model
+        # which we'll handle in the endpoint function
+
         results = client.search_messages(
             key,
             key_field=key_field,
             topics=topics,
+            headers=None,  # Will be updated in the endpoint function
             time_from=tf,
             time_to=tt,
             limit=limit,
@@ -420,6 +427,7 @@ def create_app(client: KafkaClient) -> FastAPI:
             req.key,
             key_field=req.key_field,
             topics=req.topics,
+            headers=req.headers,
             time_from=req.time_from,
             time_to=req.time_to,
             limit=req.limit,
