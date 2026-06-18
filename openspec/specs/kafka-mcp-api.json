@@ -1,0 +1,709 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Kafka MCP API",
+    "description": "Read-only Kafka MCP brick for investigating events by key in a time window",
+    "version": "0.1.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8000",
+      "description": "Local development server"
+    }
+  ],
+  "paths": {
+    "/tools/list_topics": {
+      "post": {
+        "summary": "List Kafka Topics",
+        "description": "Return a sorted list of Kafka topic names available on the broker",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "include_internal": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Include internal topics (e.g. __consumer_offsets)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "List of topic names"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tools/describe_topic": {
+      "post": {
+        "summary": "Describe Kafka Topic",
+        "description": "Return partition metadata and watermark offsets for a single Kafka topic",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "topic": {
+                    "type": "string",
+                    "description": "Topic name"
+                  }
+                },
+                "required": ["topic"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "partition_count": {
+                          "type": "integer"
+                        },
+                        "partitions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "integer"
+                              },
+                              "leader": {
+                                "type": "integer"
+                              },
+                              "replicas": {
+                                "type": "array",
+                                "items": {
+                                  "type": "integer"
+                                }
+                              },
+                              "isrs": {
+                                "type": "array",
+                                "items": {
+                                  "type": "integer"
+                                }
+                              },
+                              "earliest_offset": {
+                                "type": "integer"
+                              },
+                              "latest_offset": {
+                                "type": "integer"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Topic not found"
+          }
+        }
+      }
+    },
+    "/tools/search_messages": {
+      "post": {
+        "summary": "Search Kafka Messages",
+        "description": "Search Kafka messages by key within an optional time window",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "description": "The value to match (against message key, header, or value field)"
+                  },
+                  "key_field": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Optional match field — None/\"key\" for message key, \"header:<name>\" for header, \"value:<dotted.path>\" for value field"
+                  },
+                  "topics": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "nullable": true,
+                    "description": "Optional list of topic names to scan"
+                  },
+                  "headers": {
+                    "type": "object",
+                    "nullable": true,
+                    "description": "Optional dict of header key-value pairs to filter by",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "time_from": {
+                    "type": "string",
+                    "format": "date-time",
+                    "nullable": true,
+                    "description": "Optional ISO8601 datetime string for the start of the time window"
+                  },
+                  "time_to": {
+                    "type": "string",
+                    "format": "date-time",
+                    "nullable": true,
+                    "description": "Optional ISO8601 datetime string for the end of the time window"
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "default": 500,
+                    "minimum": 1,
+                    "maximum": 10000,
+                    "description": "Maximum number of matching messages to return"
+                  }
+                },
+                "required": ["key"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "topic": {
+                            "type": "string"
+                          },
+                          "partition": {
+                            "type": "integer"
+                          },
+                          "offset": {
+                            "type": "integer"
+                          },
+                          "key": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "value": {
+                            "type": "object"
+                          },
+                          "headers": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          },
+                          "timestamp_utc": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "raw": {
+                            "type": "string",
+                            "description": "Base64-encoded raw message bytes"
+                          },
+                          "raw_key": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "Base64-encoded raw key bytes"
+                          },
+                          "schema_id": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "source": {
+                            "type": "string"
+                          },
+                          "event_type": {
+                            "type": "string"
+                          },
+                          "keys": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tools/get_message": {
+      "post": {
+        "summary": "Get Kafka Message",
+        "description": "Fetch and decode a single Kafka message by topic, partition, and offset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "topic": {
+                    "type": "string"
+                  },
+                  "partition": {
+                    "type": "integer"
+                  },
+                  "offset": {
+                    "type": "integer"
+                  }
+                },
+                "required": ["topic", "partition", "offset"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "topic": {
+                          "type": "string"
+                        },
+                        "partition": {
+                          "type": "integer"
+                        },
+                        "offset": {
+                          "type": "integer"
+                        },
+                        "key": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "value": {
+                          "type": "object"
+                        },
+                        "headers": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "timestamp_utc": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "raw": {
+                          "type": "string",
+                          "description": "Base64-encoded raw message bytes"
+                        },
+                        "raw_key": {
+                          "type": "string",
+                          "nullable": true,
+                          "description": "Base64-encoded raw key bytes"
+                        },
+                        "schema_id": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "source": {
+                          "type": "string"
+                        },
+                        "event_type": {
+                          "type": "string"
+                        },
+                        "keys": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Message not found"
+          }
+        }
+      }
+    },
+    "/tools/consumer_group_lag": {
+      "post": {
+        "summary": "Get Consumer Group Lag",
+        "description": "Report per-partition consumer lag (committed offset vs end offset) for a given consumer group",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "group": {
+                    "type": "string",
+                    "description": "Consumer group name"
+                  },
+                  "topics": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "nullable": true,
+                    "description": "Optional list of topics to filter by"
+                  }
+                },
+                "required": ["group"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "group": {
+                            "type": "string"
+                          },
+                          "topic": {
+                            "type": "string"
+                          },
+                          "partition": {
+                            "type": "integer"
+                          },
+                          "current_offset": {
+                            "type": "integer"
+                          },
+                          "end_offset": {
+                            "type": "integer"
+                          },
+                          "lag": {
+                            "type": "integer"
+                          },
+                          "timestamp_utc": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tools/correlate_messages": {
+      "post": {
+        "summary": "Correlate Kafka Messages",
+        "description": "Correlate messages by following extracted IDs from initial results into additional topics",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "initial_results": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    },
+                    "description": "Initial search results to extract correlation IDs from"
+                  },
+                  "follow_topics": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "List of topic names to search for correlated messages"
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "default": 500,
+                    "minimum": 1,
+                    "maximum": 10000,
+                    "description": "Maximum number of total correlated messages to return"
+                  }
+                },
+                "required": ["initial_results", "follow_topics"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "topic": {
+                            "type": "string"
+                          },
+                          "partition": {
+                            "type": "integer"
+                          },
+                          "offset": {
+                            "type": "integer"
+                          },
+                          "key": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "value": {
+                            "type": "object"
+                          },
+                          "headers": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          },
+                          "timestamp_utc": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "raw": {
+                            "type": "string",
+                            "description": "Base64-encoded raw message bytes"
+                          },
+                          "raw_key": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "Base64-encoded raw key bytes"
+                          },
+                          "schema_id": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "source": {
+                            "type": "string"
+                          },
+                          "event_type": {
+                            "type": "string"
+                          },
+                          "keys": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          },
+                          "correlation_chain": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Chain of correlation IDs that discovered this message"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "KafkaMessage": {
+        "type": "object",
+        "properties": {
+          "topic": {
+            "type": "string"
+          },
+          "partition": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "key": {
+            "type": "string",
+            "nullable": true
+          },
+          "value": {
+            "type": "object"
+          },
+          "headers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "timestamp_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "raw": {
+            "type": "string",
+            "description": "Base64-encoded raw message bytes"
+          },
+          "raw_key": {
+            "type": "string",
+            "nullable": true,
+            "description": "Base64-encoded raw key bytes"
+          },
+          "schema_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "source": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "keys": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "correlation_chain": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Chain of correlation IDs that discovered this message"
+          }
+        }
+      },
+      "TopicInfo": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "partition_count": {
+            "type": "integer"
+          },
+          "partitions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PartitionInfo"
+            }
+          }
+        }
+      },
+      "PartitionInfo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "leader": {
+            "type": "integer"
+          },
+          "replicas": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "isrs": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "earliest_offset": {
+            "type": "integer"
+          },
+          "latest_offset": {
+            "type": "integer"
+          }
+        }
+      },
+      "LagRecord": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "string"
+          },
+          "topic": {
+            "type": "string"
+          },
+          "partition": {
+            "type": "integer"
+          },
+          "current_offset": {
+            "type": "integer"
+          },
+          "end_offset": {
+            "type": "integer"
+          },
+          "lag": {
+            "type": "integer"
+          },
+          "timestamp_utc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    }
+  }
+}
