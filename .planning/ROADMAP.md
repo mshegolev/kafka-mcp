@@ -98,5 +98,5 @@ honor the 4-face symmetry and the Investigator-Contract Evidence shape.
 | 6. Real-Broker E2E Contour | v1.1 | 2/2 | Complete | 2026-06-16 |
 | 7. Release Pipeline | v1.1 | 2/2 | Complete | 2026-06-16 |
 | 8. Multi-Topic Search & Header Filtering | v1.2 | 1/1 | Complete | 2026-06-18 |
-| 9. Correlation Engine | v1.2 | 0/0 | Not started | - |
+| 9. Correlation Engine | v1.2 | 1/1 | Complete | 2026-06-18 |
 | 10. 4-Face Symmetry & Integration Tests | v1.2 | 0/0 | Not started | - |
