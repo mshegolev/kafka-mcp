@@ -121,6 +121,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Comma-separated list of topic names to scan. Defaults to all topics.",
     )
     sm.add_argument(
+        "--headers",
+        default=None,
+        help="Comma-separated list of header key-value pairs to filter by (e.g., 'trace_id=abc,key2=value2').",
+    )
+    sm.add_argument(
         "--time-from",
         dest="time_from",
         default=None,
@@ -321,6 +326,7 @@ def run_search_messages(
     key: str,
     key_field: str | None = None,
     topics: str | None = None,
+    headers: str | None = None,
     time_from_str: str | None = None,
     time_to_str: str | None = None,
     limit: int = 500,
@@ -335,6 +341,8 @@ def run_search_messages(
             "value:<dotted.path>").
         topics: Optional comma-separated topic names string.  Split on
             comma and stripped.  Defaults to None (all topics).
+        headers: Optional comma-separated header key-value pairs string.
+            Split on comma and parsed as key=value pairs.
         time_from_str: Optional ISO8601 datetime string for start of window.
         time_to_str: Optional ISO8601 datetime string for end of window.
         limit: Maximum number of matching messages (default 500).
@@ -358,10 +366,21 @@ def run_search_messages(
     if topics is not None:
         topics_list = [t.strip() for t in topics.split(",") if t.strip()]
 
+    # Parse comma-separated header key-value pairs
+    headers_dict: dict[str, str] | None = None
+    if headers is not None:
+        headers_dict = {}
+        for pair in headers.split(","):
+            pair = pair.strip()
+            if "=" in pair:
+                k, v = pair.split("=", 1)
+                headers_dict[k.strip()] = v.strip()
+
     results = client.search_messages(
         key,
         key_field=key_field,
         topics=topics_list,
+        headers=headers_dict,
         time_from=tf,
         time_to=tt,
         limit=limit,
@@ -556,6 +575,7 @@ def main(argv: list[str] | None = None) -> None:
                 key=ns.key,
                 key_field=ns.key_field,
                 topics=ns.topics,
+                headers=ns.headers,
                 time_from_str=ns.time_from,
                 time_to_str=ns.time_to,
                 limit=ns.limit,

@@ -184,7 +184,7 @@ SchemaRegistryHttpAdapter`.
         Args:
             key: The value to match.
             **kwargs: Forwarded to :meth:`TopicService.search_messages`.
-                Supported keyword args: ``key_field``, ``topics``,
+                Supported keyword args: ``key_field``, ``topics``, ``headers``,
                 ``time_from``, ``time_to``, ``limit``.
 
         Returns:

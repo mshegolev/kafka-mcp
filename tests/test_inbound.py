@@ -454,6 +454,8 @@ def test_cli_search_messages_flags() -> None:
             "header:ce-type",
             "--topics",
             "orders,payments",
+            "--headers",
+            "trace_id=abc,key2=value2",
             "--time-from",
             "2026-01-01T00:00:00Z",
             "--time-to",
@@ -467,10 +469,66 @@ def test_cli_search_messages_flags() -> None:
     assert ns.key == "ORD-123"
     assert ns.key_field == "header:ce-type"
     assert ns.topics == "orders,payments"
+    assert ns.headers == "trace_id=abc,key2=value2"
     assert ns.time_from == "2026-01-01T00:00:00Z"
     assert ns.time_to == "2026-01-02T00:00:00Z"
     assert ns.limit == 100
     assert ns.json is True
+
+
+def test_cli_search_messages_headers_parsing() -> None:
+    """run_search_messages correctly parses headers parameter."""
+    from kafka_mcp.adapters.inbound.cli import run_search_messages
+
+    # Create a mock client that can verify the headers parameter was passed correctly
+    class TrackingMockKafkaClient:
+        def __init__(self):
+            self.last_call_kwargs = {}
+
+        def search_messages(self, key, **kwargs):
+            self.last_call_kwargs = kwargs
+            # Return a minimal result
+            from kafka_mcp.domain.models import KafkaMessage
+            from datetime import datetime, timezone
+
+            return [
+                KafkaMessage(
+                    topic="test",
+                    partition=0,
+                    offset=0,
+                    key=key,
+                    headers={},
+                    value=None,
+                    timestamp_utc=datetime.now(timezone.utc),
+                    raw=b"",
+                )
+            ]
+
+        def close(self):
+            pass
+
+    client = TrackingMockKafkaClient()
+
+    output = _capture_run(
+        run_search_messages,
+        client,
+        key="ORD-123",
+        key_field=None,
+        topics=None,
+        headers="trace_id=abc,source=web",
+        time_from_str=None,
+        time_to_str=None,
+        limit=500,
+        as_json=True,
+    )
+
+    # Verify that the headers were parsed and passed correctly
+    assert "headers" in client.last_call_kwargs
+    headers_dict = client.last_call_kwargs["headers"]
+    assert headers_dict is not None
+    assert isinstance(headers_dict, dict)
+    assert headers_dict["trace_id"] == "abc"
+    assert headers_dict["source"] == "web"
 
 
 def test_cli_get_message_subcommand_exists() -> None:

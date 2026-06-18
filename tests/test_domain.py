@@ -915,3 +915,240 @@ class TestGetMessageKeyDecode:
         # Should not raise — key DecodeError is swallowed
         msg = svc.get_message("orders", 0, 42)
         assert msg.key_decoded is None
+
+
+def _make_raw_msg(topic="test-topic", partition=0, offset=0, key=None, headers=None, value=None):
+    from kafka_mcp.domain.models import KafkaMessage
+    from datetime import datetime, timezone
+
+    return KafkaMessage(
+        topic=topic,
+        partition=partition,
+        offset=offset,
+        key=key,
+        headers=headers or {},
+        value=value,
+        timestamp_utc=datetime(2026, 6, 8, 0, 0, 0, tzinfo=timezone.utc),
+        raw=b"test-payload",
+    )
+
+
+class TestMatchesHeaders:
+    """Tests for the _matches_headers helper function."""
+
+    def test_matches_headers_none_returns_true(self) -> None:
+        from kafka_mcp.domain.search_service import _matches_headers
+
+        msg = _make_raw_msg(headers={"trace_id": "abc"})
+        assert _matches_headers(msg, None) is True
+
+    def test_matches_headers_empty_dict_returns_true(self) -> None:
+        from kafka_mcp.domain.search_service import _matches_headers
+
+        msg = _make_raw_msg(headers={"trace_id": "abc"})
+        assert _matches_headers(msg, {}) is True
+
+    def test_matches_headers_single_match_returns_true(self) -> None:
+        from kafka_mcp.domain.search_service import _matches_headers
+
+        msg = _make_raw_msg(headers={"trace_id": "abc", "other": "value"})
+        assert _matches_headers(msg, {"trace_id": "abc"}) is True
+
+    def test_matches_headers_multiple_match_returns_true(self) -> None:
+        from kafka_mcp.domain.search_service import _matches_headers
+
+        msg = _make_raw_msg(headers={"trace_id": "abc", "correlation_id": "123"})
+        assert _matches_headers(msg, {"trace_id": "abc", "correlation_id": "123"}) is True
+
+    def test_matches_headers_single_mismatch_returns_false(self) -> None:
+        from kafka_mcp.domain.search_service import _matches_headers
+
+        msg = _make_raw_msg(headers={"trace_id": "abc"})
+        assert _matches_headers(msg, {"trace_id": "xyz"}) is False
+
+    def test_matches_headers_partial_match_returns_false(self) -> None:
+        from kafka_mcp.domain.search_service import _matches_headers
+
+        msg = _make_raw_msg(headers={"trace_id": "abc"})
+        assert _matches_headers(msg, {"trace_id": "abc", "missing_key": "value"}) is False
+
+    def test_matches_headers_key_missing_returns_false(self) -> None:
+        from kafka_mcp.domain.search_service import _matches_headers
+
+        msg = _make_raw_msg(headers={"trace_id": "abc"})
+        assert _matches_headers(msg, {"missing_key": "value"}) is False
+
+
+class TestSearchMessagesWithHeaders:
+    """Integration tests for search_messages with header filtering."""
+
+    class _MockConsumerWithMultipleMsgs:
+        def __init__(self, messages_by_topic):
+            self.messages_by_topic = messages_by_topic
+
+        def list_topics(self, include_internal=False):
+            return list(self.messages_by_topic.keys())
+
+        def get_partition_ids(self, topic):
+            return [0]
+
+        def get_watermark_offsets(self, topic, partition):
+            return (0, 100)
+
+        def offsets_for_times(self, topic, partition, timestamp_ms):
+            return 0
+
+        def fetch_messages(self, topic, partition, start_offset, stop_offset, time_to, limit):
+            return self.messages_by_topic.get(topic, [])
+
+        def fetch_message(self, topic, partition, offset):
+            raise NotImplementedError
+
+        def consumer_group_lag(self, group, topics=None):
+            return []
+
+    def test_search_messages_with_headers_filtering(self) -> None:
+        from kafka_mcp.domain.search_service import TopicService
+        from kafka_mcp.domain.models import KafkaMessage
+        from datetime import datetime, timezone
+
+        # Create messages with different headers
+        msg1 = KafkaMessage(
+            topic="orders",
+            partition=0,
+            offset=1,
+            key="order-123",
+            headers={"trace_id": "abc-123", "source": "web"},
+            value={"order_id": "order-123"},
+            timestamp_utc=datetime(2026, 6, 8, 12, 0, 0, tzinfo=timezone.utc),
+            raw=b"payload1",
+        )
+
+        msg2 = KafkaMessage(
+            topic="orders",
+            partition=0,
+            offset=2,
+            key="order-123",
+            headers={"trace_id": "xyz-456", "source": "mobile"},
+            value={"order_id": "order-123"},
+            timestamp_utc=datetime(2026, 6, 8, 12, 1, 0, tzinfo=timezone.utc),
+            raw=b"payload2",
+        )
+
+        msg3 = KafkaMessage(
+            topic="payments",
+            partition=0,
+            offset=1,
+            key="order-123",
+            headers={"trace_id": "abc-123", "source": "backend"},
+            value={"payment_id": "pay-456"},
+            timestamp_utc=datetime(2026, 6, 8, 12, 2, 0, tzinfo=timezone.utc),
+            raw=b"payload3",
+        )
+
+        consumer = self._MockConsumerWithMultipleMsgs({"orders": [msg1, msg2], "payments": [msg3]})
+
+        registry = MockSchemaRegistry()
+        svc = TopicService(consumer, registry)
+
+        # Search with header filter - should return only messages with trace_id=abc-123
+        results = svc.search_messages("order-123", headers={"trace_id": "abc-123"})
+        assert len(results) == 2
+        assert results[0].topic == "orders"
+        assert results[0].offset == 1
+        assert results[1].topic == "payments"
+        assert results[1].offset == 1
+
+    def test_search_messages_with_multiple_header_filters(self) -> None:
+        from kafka_mcp.domain.search_service import TopicService
+        from kafka_mcp.domain.models import KafkaMessage
+        from datetime import datetime, timezone
+
+        # Create messages with different header combinations
+        msg1 = KafkaMessage(
+            topic="orders",
+            partition=0,
+            offset=1,
+            key="order-123",
+            headers={"trace_id": "abc-123", "source": "web"},
+            value={"order_id": "order-123"},
+            timestamp_utc=datetime(2026, 6, 8, 12, 0, 0, tzinfo=timezone.utc),
+            raw=b"payload1",
+        )
+
+        msg2 = KafkaMessage(
+            topic="orders",
+            partition=0,
+            offset=2,
+            key="order-123",
+            headers={"trace_id": "abc-123", "source": "mobile"},
+            value={"order_id": "order-123"},
+            timestamp_utc=datetime(2026, 6, 8, 12, 1, 0, tzinfo=timezone.utc),
+            raw=b"payload2",
+        )
+
+        consumer = self._MockConsumerWithMultipleMsgs({"orders": [msg1, msg2]})
+
+        registry = MockSchemaRegistry()
+        svc = TopicService(consumer, registry)
+
+        # Search with multiple header filters - should return only messages matching both
+        results = svc.search_messages("order-123", headers={"trace_id": "abc-123", "source": "web"})
+        assert len(results) == 1
+        assert results[0].topic == "orders"
+        assert results[0].offset == 1
+        assert results[0].headers["source"] == "web"
+
+    def test_search_messages_multi_topic_sorting(self) -> None:
+        from kafka_mcp.domain.search_service import TopicService
+        from kafka_mcp.domain.models import KafkaMessage
+        from datetime import datetime, timezone, timedelta
+
+        # Create messages with different timestamps across topics
+        base_time = datetime(2026, 6, 8, 12, 0, 0, tzinfo=timezone.utc)
+
+        msg1 = KafkaMessage(
+            topic="orders",
+            partition=0,
+            offset=1,
+            key="order-123",
+            headers={"trace_id": "abc"},
+            value={"order_id": "order-123"},
+            timestamp_utc=base_time + timedelta(minutes=2),  # Middle timestamp
+            raw=b"payload1",
+        )
+
+        msg2 = KafkaMessage(
+            topic="payments",
+            partition=0,
+            offset=1,
+            key="order-123",
+            headers={"trace_id": "abc"},
+            value={"payment_id": "pay-456"},
+            timestamp_utc=base_time,  # Earliest timestamp
+            raw=b"payload2",
+        )
+
+        msg3 = KafkaMessage(
+            topic="shipments",
+            partition=0,
+            offset=1,
+            key="order-123",
+            headers={"trace_id": "abc"},
+            value={"shipment_id": "ship-789"},
+            timestamp_utc=base_time + timedelta(minutes=5),  # Latest timestamp
+            raw=b"payload3",
+        )
+
+        consumer = self._MockConsumerWithMultipleMsgs({"orders": [msg1], "payments": [msg2], "shipments": [msg3]})
+
+        registry = MockSchemaRegistry()
+        svc = TopicService(consumer, registry)
+
+        # Search across multiple topics - results should be sorted by timestamp
+        results = svc.search_messages("order-123", topics=["orders", "payments", "shipments"])
+        assert len(results) == 3
+        # Check that results are sorted by timestamp_utc
+        assert results[0].topic == "payments"  # Earliest
+        assert results[1].topic == "orders"  # Middle
+        assert results[2].topic == "shipments"  # Latest

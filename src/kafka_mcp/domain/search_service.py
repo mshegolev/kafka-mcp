@@ -80,9 +80,7 @@ def _decode_key(
         return None
 
 
-def _matches_key(
-    msg: KafkaMessage, key: str, key_field: str | None
-) -> bool:
+def _matches_key(msg: KafkaMessage, key: str, key_field: str | None) -> bool:
     """Return True when the message matches key under the given key_field.
 
     Key field semantics (per CONTEXT.md):
@@ -115,6 +113,26 @@ def _matches_key(
             return False
 
     return False
+
+
+def _matches_headers(msg: KafkaMessage, headers: dict[str, str] | None) -> bool:
+    """Return True when the message matches all specified header key-value pairs.
+
+    Args:
+        msg: The KafkaMessage to check
+        headers: Dictionary of header key-value pairs to match, or None for no filtering
+
+    Returns:
+        True if all specified headers match exactly, False otherwise
+    """
+    if headers is None or len(headers) == 0:
+        return True
+
+    for header_name, header_value in headers.items():
+        if msg.headers.get(header_name) != header_value:
+            return False
+
+    return True
 
 
 def _extract_evidence_keys(
@@ -220,9 +238,7 @@ class TopicService:
         Returns:
             Sorted list of topic name strings.
         """
-        return self._consumer.list_topics(
-            include_internal=include_internal
-        )
+        return self._consumer.list_topics(include_internal=include_internal)
 
     def describe_topic(self, topic: str) -> TopicInfo:
         """Return detailed metadata for a single topic.
@@ -275,6 +291,7 @@ class TopicService:
         *,
         key_field: str | None = None,
         topics: list[str] | None = None,
+        headers: dict[str, str] | None = None,
         time_from: datetime | None = None,
         time_to: datetime | None = None,
         limit: int = 500,
@@ -283,14 +300,15 @@ class TopicService:
 
         Scans the requested topics/partitions using ConsumerPort, decodes
         each message via SchemaRegistryPort, and returns those matching
-        the key according to key_field semantics.
+        the key according to key_field semantics and header filters.
 
         Algorithm:
         1. Resolve topics (None → list_topics()).
         2. Resolve time_to (None → datetime.now(UTC)).
         3. For each topic/partition: resolve start_offset from time_from
            (None → low watermark); resolve stop_offset from high watermark.
-        4. Fetch, decode, match, extract Evidence; respect global limit.
+        4. Fetch, decode, match key + headers, extract Evidence; respect global limit.
+        5. Sort results by timestamp_utc.
 
         Args:
             key: The value to match.
@@ -298,6 +316,8 @@ class TopicService:
                 "header:<name>" (header value), "value:<path>" (decoded
                 field at dotted path).
             topics: Topic names to scan.  None → all non-internal topics.
+            headers: Optional dictionary of header key-value pairs to filter by.
+                Messages must match ALL specified header key-value pairs.
             time_from: Inclusive start of time window (UTC-aware).
                 None → scan from earliest offset.
             time_to: Exclusive end of time window (UTC-aware).
@@ -306,7 +326,8 @@ class TopicService:
                 0 or negative → returns [] immediately (T-02-04-D).
 
         Returns:
-            List of KafkaMessage objects (decoded value, evidence keys).
+            List of KafkaMessage objects (decoded value, evidence keys),
+            sorted by timestamp_utc.
         """
         # T-02-04-D: guard against non-positive limit
         if limit <= 0:
@@ -315,9 +336,7 @@ class TopicService:
         # 1. Resolve topics
         resolved_topics: list[str]
         if topics is None:
-            resolved_topics = self._consumer.list_topics(
-                include_internal=False
-            )
+            resolved_topics = self._consumer.list_topics(include_internal=False)
         else:
             resolved_topics = topics
 
@@ -342,15 +361,11 @@ class TopicService:
                     break
 
                 # Resolve start_offset
-                low, stop_offset = self._consumer.get_watermark_offsets(
-                    topic, partition_id
-                )
+                low, stop_offset = self._consumer.get_watermark_offsets(topic, partition_id)
 
                 if time_from is not None:
                     ts_ms = int(time_from.timestamp() * 1000)
-                    start_offset = self._consumer.offsets_for_times(
-                        topic, partition_id, ts_ms
-                    )
+                    start_offset = self._consumer.offsets_for_times(topic, partition_id, ts_ms)
                     # offsets_for_times returns -2 (OFFSET_BEGINNING) when
                     # timestamp is before earliest message → use low watermark
                     if start_offset == _OFFSET_BEGINNING or start_offset < 0:
@@ -383,9 +398,7 @@ class TopicService:
                     except DecodeError:
                         decoded = None
 
-                    evidence_keys = _extract_evidence_keys(
-                        decoded, raw_msg.headers
-                    )
+                    evidence_keys = _extract_evidence_keys(decoded, raw_msg.headers)
 
                     # KEY-01: resilient key decode (DecodeError swallowed)
                     key_decoded = _decode_key(
@@ -400,9 +413,7 @@ class TopicService:
                     _val_id = _extract_schema_id(raw_msg.raw)
                     _key_id = _extract_schema_id(raw_msg.raw_key)
                     schema_id = (
-                        {"value": _val_id, "key": _key_id}
-                        if _val_id is not None or _key_id is not None
-                        else None
+                        {"value": _val_id, "key": _key_id} if _val_id is not None or _key_id is not None else None
                     )
 
                     msg = raw_msg.model_copy(
@@ -414,10 +425,14 @@ class TopicService:
                         }
                     )
 
-                    if _matches_key(msg, key, key_field):
+                    # Apply key matching AND header filtering (AND semantics)
+                    if _matches_key(msg, key, key_field) and _matches_headers(msg, headers):
                         results.append(msg)
                         if len(results) >= limit:
                             break
+
+        # Sort results by timestamp_utc across all topics
+        results.sort(key=lambda msg: msg.timestamp_utc)
 
         return results
 
@@ -470,11 +485,7 @@ class TopicService:
         # KEY-02: schema_id dict from Confluent wire framing
         _val_id = _extract_schema_id(raw_msg.raw)
         _key_id = _extract_schema_id(raw_msg.raw_key)
-        schema_id = (
-            {"value": _val_id, "key": _key_id}
-            if _val_id is not None or _key_id is not None
-            else None
-        )
+        schema_id = {"value": _val_id, "key": _key_id} if _val_id is not None or _key_id is not None else None
 
         return raw_msg.model_copy(
             update={
