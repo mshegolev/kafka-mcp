@@ -35,3 +35,17 @@
 - Phase 7: Tag-triggered CI release workflow, RELEASE.md runbook, glama.json/server.json reflect v1.1
 
 ---
+
+## v1.2 Cross-Topic Investigation (Shipped: 2026-06-18)
+
+**Phases completed:** 3 phases, 3 plans
+**Requirements:** 8 (MTS-01, MTS-02, HDR-01, HDR-02, COR-01, COR-02, COR-03, SYM-01)
+**Tests:** 317 unit + 25 integration = 342 total
+
+**Key accomplishments:**
+
+- Phase 8: Multi-topic search with header filtering — search across multiple topics simultaneously with header key-value filters
+- Phase 9: Correlation engine — extract correlated entity IDs from search results and follow them into additional topics to build cross-service event chains
+- Phase 10: 4-face symmetry and integration tests — ensure all v1.2 capabilities accessible identically through MCP stdio, FastAPI REST, and CLI faces
+
+---
