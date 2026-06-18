@@ -34,7 +34,7 @@
 
 </details>
 
-### 🚧 v1.2 Cross-Topic Investigation (In Progress)
+### ✅ v1.2 Cross-Topic Investigation (Completed 2026-06-18)
 
 **Milestone Goal:** Enable investigators to trace entities across multiple Kafka
 topics — searching a key across topics simultaneously, filtering by message
@@ -42,9 +42,9 @@ headers, extracting correlated IDs from payloads/headers, and following those ID
 into other topics to build cross-service event chains. All new capabilities
 honor the 4-face symmetry and the Investigator-Contract Evidence shape.
 
-- [ ] **Phase 8: Multi-Topic Search & Header Filtering** — Extend `search_messages` to accept multiple topics and header key-value filters at the domain/lib layer
-- [ ] **Phase 9: Correlation Engine** — New `correlate_messages` capability that extracts correlated IDs from search results and follows them into additional topics
-- [ ] **Phase 10: 4-Face Symmetry & Integration Tests** — Wire all v1.2 capabilities across MCP/FastAPI/CLI faces; update integration test suite for cross-topic scenarios
+- [x] **Phase 8: Multi-Topic Search & Header Filtering** — Extend `search_messages` to accept multiple topics and header key-value filters at the domain/lib layer
+- [x] **Phase 9: Correlation Engine** — New `correlate_messages` capability that extracts correlated IDs from search results and follows them into additional topics
+- [x] **Phase 10: 4-Face Symmetry & Integration Tests** — Wire all v1.2 capabilities across MCP/FastAPI/CLI faces; update integration test suite for cross-topic scenarios
 
 ## Phase Details
 
