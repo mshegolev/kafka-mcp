@@ -187,6 +187,62 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Output as JSON instead of table.",
     )
 
+    # correlate-messages
+    cm = subparsers.add_parser(
+        "correlate-messages",
+        help="Correlate messages by following extracted IDs into additional topics.",
+    )
+    cm.add_argument(
+        "--key",
+        required=True,
+        help="The value to match for initial search.",
+    )
+    cm.add_argument(
+        "--key-field",
+        dest="key_field",
+        default=None,
+        help=(
+            "Match field for initial search: None/'key' for message key, "
+            "'header:<name>' for a header, 'value:<dotted.path>' for value field."
+        ),
+    )
+    cm.add_argument(
+        "--initial-topics",
+        dest="initial_topics",
+        default=None,
+        help="Comma-separated list of topic names for initial search. Defaults to all topics.",
+    )
+    cm.add_argument(
+        "--follow-topics",
+        dest="follow_topics",
+        required=True,
+        help="Comma-separated list of topic names to follow correlations into.",
+    )
+    cm.add_argument(
+        "--time-from",
+        dest="time_from",
+        default=None,
+        help="Start of time window as ISO8601 datetime (e.g. 2026-01-01T00:00:00Z).",
+    )
+    cm.add_argument(
+        "--time-to",
+        dest="time_to",
+        default=None,
+        help="End of time window as ISO8601 datetime. Defaults to now.",
+    )
+    cm.add_argument(
+        "--limit",
+        type=int,
+        default=500,
+        help="Maximum number of correlated messages to return (default 500).",
+    )
+    cm.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Output as JSON instead of table.",
+    )
+
     return parser
 
 
@@ -538,6 +594,114 @@ def run_consumer_group_lag(
         )
 
 
+def run_correlate_messages(
+    client: KafkaClient,
+    key: str,
+    follow_topics: str,
+    key_field: str | None = None,
+    initial_topics: str | None = None,
+    time_from_str: str | None = None,
+    time_to_str: str | None = None,
+    limit: int = 500,
+    as_json: bool = False,
+) -> None:
+    """Correlate messages by following extracted IDs into additional topics.
+
+    Args:
+        client: KafkaClient to query.
+        key: The value to match for initial search.
+        key_field: Optional match field for initial search.
+        initial_topics: Optional comma-separated initial topic names string.
+        follow_topics: Comma-separated follow topic names string.
+        time_from_str: Optional ISO8601 datetime string for start of window.
+        time_to_str: Optional ISO8601 datetime string for end of window.
+        limit: Maximum number of correlated messages (default 500).
+        as_json: When True, print JSON; otherwise print a table.
+    """
+    # Parse datetime strings
+    tf: datetime | None = None
+    if time_from_str is not None:
+        tf = datetime.fromisoformat(time_from_str)
+        if tf.tzinfo is None:
+            tf = tf.replace(tzinfo=timezone.utc)
+
+    tt: datetime | None = None
+    if time_to_str is not None:
+        tt = datetime.fromisoformat(time_to_str)
+        if tt.tzinfo is None:
+            tt = tt.replace(tzinfo=timezone.utc)
+
+    # Parse comma-separated initial topics
+    initial_topics_list: list[str] | None = None
+    if initial_topics is not None:
+        initial_topics_list = [t.strip() for t in initial_topics.split(",") if t.strip()]
+
+    # Parse comma-separated follow topics (required)
+    follow_topics_list = [t.strip() for t in follow_topics.split(",") if t.strip()]
+    if not follow_topics_list:
+        print("Error: --follow-topics is required", file=sys.stderr)
+        sys.exit(1)
+
+    # Perform initial search
+    initial_results = client.search_messages(
+        key,
+        key_field=key_field,
+        topics=initial_topics_list,
+        time_from=tf,
+        time_to=tt,
+        limit=limit,
+    )
+
+    # Perform correlation
+    correlated_results = client.correlate_messages(
+        initial_results=initial_results,
+        follow_topics=follow_topics_list,
+        limit=limit,
+    )
+
+    if as_json:
+        serialized = [_serialize_message_for_cli(m) for m in correlated_results]
+        print(orjson_dumps(serialized).decode())
+        return
+
+    # Human-readable table
+    if not correlated_results:
+        print("(no correlated messages)")
+        return
+
+    col_ts = 26
+    col_topic = max(max(len(m.topic) for m in correlated_results), len("Topic"))
+    col_part = max(len("Partition"), 9)
+    col_off = max(len("Offset"), 6)
+    col_key = max(max(len(str(m.key or "")) for m in correlated_results), len("Key"), 10)
+    col_chain = max(max(len("->".join(m.correlation_chain)) for m in correlated_results), len("Correlation Chain"), 20)
+
+    header = (
+        f"{'Timestamp':<{col_ts}}  "
+        f"{'Topic':<{col_topic}}  "
+        f"{'Partition':>{col_part}}  "
+        f"{'Offset':>{col_off}}  "
+        f"{'Key':<{col_key}}  "
+        f"{'Correlation Chain':<{col_chain}}  "
+        f"Value"
+    )
+    print(header)
+    print("-" * (len(header) + 20))
+    for msg in correlated_results:
+        ts_str = msg.timestamp_utc.isoformat()[:col_ts]
+        val_str = str(msg.value or "")[:60]
+        chain_str = "->".join(msg.correlation_chain)[:col_chain]
+        print(
+            f"{ts_str:<{col_ts}}  "
+            f"{msg.topic:<{col_topic}}  "
+            f"{msg.partition:>{col_part}}  "
+            f"{msg.offset:>{col_off}}  "
+            f"{str(msg.key or ''):<{col_key}}  "
+            f"{chain_str:<{col_chain}}  "
+            f"{val_str}"
+        )
+
+
 # ---------------------------------------------------------------------------
 # main entry point
 # ---------------------------------------------------------------------------
@@ -594,6 +758,18 @@ def main(argv: list[str] | None = None) -> None:
                 client,
                 group=ns.group,
                 topics=ns.topics,
+                as_json=ns.json,
+            )
+        elif ns.subcommand == "correlate-messages":
+            run_correlate_messages(
+                client,
+                key=ns.key,
+                follow_topics=ns.follow_topics,
+                key_field=ns.key_field,
+                initial_topics=ns.initial_topics,
+                time_from_str=ns.time_from,
+                time_to_str=ns.time_to,
+                limit=ns.limit,
                 as_json=ns.json,
             )
         else:

@@ -78,6 +78,12 @@ class KafkaMessage(BaseModel):
         description=("Extracted investigator identifiers.  Absent identifiers are None."),
     )
 
+    # --- Correlation Engine fields ---
+    correlation_chain: list[str] = Field(
+        default_factory=list,
+        description=("Chain of IDs that led to discovery of this message."),
+    )
+
 
 class LagRecord(BaseModel):
     """Per-partition consumer-group lag snapshot.

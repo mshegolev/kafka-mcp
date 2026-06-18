@@ -106,6 +106,19 @@ class ConsumerGroupLagRequest(BaseModel):
     topics: list[str] | None = None
 
 
+class CorrelateMessagesRequest(BaseModel):
+    """Request body for POST /tools/correlate_messages.
+
+    ``initial_results`` are the messages to extract correlation IDs from.
+    ``follow_topics`` are the topics to search for correlated messages.
+    ``limit`` is constrained to 1–10000 to prevent DoS.
+    """
+
+    initial_results: list[dict]
+    follow_topics: list[str]
+    limit: int = Field(default=500, ge=1, le=10000)
+
+
 # ---------------------------------------------------------------------------
 # Serialization helper
 # ---------------------------------------------------------------------------
@@ -267,6 +280,45 @@ def _create_http_mcp_server(client: KafkaClient) -> FastMCP:
         """Report per-partition lag for a consumer group."""
         records = client.consumer_group_lag(group, topics)
         return [_serialize_lag_record(r) for r in records]
+
+    @http_mcp.tool(
+        name="correlate_messages",
+        description=(
+            "Correlate messages by following extracted IDs from initial results into additional topics. "
+            "Returns correlated messages with correlation_chain populated."
+        ),
+        annotations=_READ_ONLY,
+    )
+    def correlate_messages(
+        initial_results_data: list[dict],
+        follow_topics: list[str],
+        limit: int = 500,
+    ) -> list[dict]:  # noqa: D401
+        """Correlate messages by following extracted IDs into additional topics."""
+        # Convert dict data back to KafkaMessage objects
+        from kafka_mcp.domain.models import KafkaMessage
+        import base64
+
+        initial_results: list[KafkaMessage] = []
+        for msg_data in initial_results_data:
+            # Handle base64 decoding of raw fields
+            if "raw" in msg_data and isinstance(msg_data["raw"], str):
+                msg_data["raw"] = base64.b64decode(msg_data["raw"])
+            if "raw_key" in msg_data and isinstance(msg_data["raw_key"], str):
+                msg_data["raw_key"] = base64.b64decode(msg_data["raw_key"])
+            # Handle timestamp parsing
+            if "timestamp_utc" in msg_data and isinstance(msg_data["timestamp_utc"], str):
+                from datetime import datetime, timezone
+
+                msg_data["timestamp_utc"] = datetime.fromisoformat(msg_data["timestamp_utc"].replace("Z", "+00:00"))
+            initial_results.append(KafkaMessage(**msg_data))
+
+        results = client.correlate_messages(
+            initial_results=initial_results,
+            follow_topics=follow_topics,
+            limit=limit,
+        )
+        return [_serialize_message(m) for m in results]
 
     return http_mcp
 
@@ -433,5 +485,37 @@ def create_app(client: KafkaClient) -> FastAPI:
         """
         records = client.consumer_group_lag(req.group, req.topics)
         return {"result": [_serialize_lag_record(r) for r in records]}
+
+    @app.post("/tools/correlate_messages")
+    def _correlate_messages(req: CorrelateMessagesRequest) -> dict:
+        """Correlate messages by following extracted IDs into additional topics.
+
+        Returns:
+            ``{"result": [...]}`` — list of correlated message dicts with base64 raw.
+        """
+        # Convert dict data back to KafkaMessage objects
+        from kafka_mcp.domain.models import KafkaMessage
+        import base64
+
+        initial_results: list[KafkaMessage] = []
+        for msg_data in req.initial_results:
+            # Handle base64 decoding of raw fields
+            if "raw" in msg_data and isinstance(msg_data["raw"], str):
+                msg_data["raw"] = base64.b64decode(msg_data["raw"])
+            if "raw_key" in msg_data and isinstance(msg_data["raw_key"], str):
+                msg_data["raw_key"] = base64.b64decode(msg_data["raw_key"])
+            # Handle timestamp parsing
+            if "timestamp_utc" in msg_data and isinstance(msg_data["timestamp_utc"], str):
+                from datetime import datetime, timezone
+
+                msg_data["timestamp_utc"] = datetime.fromisoformat(msg_data["timestamp_utc"].replace("Z", "+00:00"))
+            initial_results.append(KafkaMessage(**msg_data))
+
+        results = client.correlate_messages(
+            initial_results=initial_results,
+            follow_topics=req.follow_topics,
+            limit=req.limit,
+        )
+        return {"result": [_serialize_message(m) for m in results]}
 
     return app

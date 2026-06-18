@@ -187,6 +187,65 @@ def _extract_evidence_keys(
     return result
 
 
+def _extract_correlation_ids(msg: KafkaMessage) -> set[str]:
+    """Extract correlation IDs from message value and headers.
+
+    Looks for common correlation field names in both message value and headers.
+    Returns a set of unique correlation IDs found.
+    """
+    correlation_fields = {
+        "trace_id",
+        "traceId",
+        "trace-id",
+        "correlation_id",
+        "correlationId",
+        "correlation-id",
+        "request_id",
+        "requestId",
+        "request-id",
+        "transaction_id",
+        "transactionId",
+        "transaction-id",
+        "span_id",
+        "spanId",
+        "span-id",
+        "parent_id",
+        "parentId",
+        "parent-id",
+        "order_id",
+        "orderId",
+        "order-id",
+        "customer_id",
+        "customerId",
+        "customer-id",
+        "session_id",
+        "sessionId",
+        "session-id",
+    }
+
+    ids: set[str] = set()
+
+    # Extract from value
+    if msg.value is not None and isinstance(msg.value, dict):
+        for field in correlation_fields:
+            val = msg.value.get(field)
+            if val is not None:
+                ids.add(str(val))
+
+    # Extract from headers
+    for field in correlation_fields:
+        val = msg.headers.get(field)
+        if val is not None:
+            ids.add(val)
+
+    # Also check evidence keys for correlation IDs
+    for key, val in msg.keys.items():
+        if val is not None:
+            ids.add(val)
+
+    return ids
+
+
 class TopicService:
     """Domain service that orchestrates topic queries via ConsumerPort.
 

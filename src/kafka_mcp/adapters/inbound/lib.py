@@ -37,6 +37,7 @@ from kafka_mcp.adapters.outbound.confluent_consumer import (
 from kafka_mcp.config import KafkaMcpSettings
 from kafka_mcp.domain.models import KafkaMessage, LagRecord, TopicInfo
 from kafka_mcp.domain.search_service import TopicService
+from kafka_mcp.domain.correlation_service import CorrelationService
 from kafka_mcp.ports.consumer import ConsumerPort
 from kafka_mcp.ports.schema_registry import SchemaRegistryPort
 
@@ -105,6 +106,7 @@ class KafkaClient:
         self._consumer = consumer
         effective_registry: SchemaRegistryPort = registry if registry is not None else _NullSchemaRegistry()
         self._service = TopicService(consumer, effective_registry)
+        self._correlation_service = CorrelationService(consumer, effective_registry)
 
     @classmethod
     def from_env(cls) -> KafkaClient:
@@ -233,6 +235,34 @@ SchemaRegistryHttpAdapter`.
             List of :class:`~kafka_mcp.domain.models.LagRecord` objects.
         """
         return self._consumer.consumer_group_lag(group, topics)
+
+    def correlate_messages(
+        self,
+        initial_results: list[KafkaMessage],
+        follow_topics: list[str],
+        limit: int = 500,
+    ) -> list[KafkaMessage]:
+        """Correlate messages by following extracted IDs into additional topics.
+
+        Implements the correlation engine functionality:
+        1. Extract correlated IDs from initial search results
+        2. Follow extracted IDs into follow_topics
+        3. Return combined results with correlation_chain populated
+
+        Args:
+            initial_results: Initial search results to extract correlation IDs from.
+            follow_topics: List of topic names to search for correlated messages.
+            limit: Maximum number of total correlated messages to return.
+
+        Returns:
+            List of KafkaMessage objects with correlation_chain populated,
+            sorted by timestamp_utc.
+        """
+        return self._correlation_service.correlate_messages(
+            initial_results=initial_results,
+            follow_topics=follow_topics,
+            limit=limit,
+        )
 
     # ------------------------------------------------------------------
     # Lifecycle (WR-02): the underlying librdkafka Consumer holds

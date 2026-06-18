@@ -65,6 +65,7 @@ def main() -> None:
         "search-messages",
         "get-message",
         "consumer-group-lag",
+        "correlate-messages",
     }
     if args and args[0] in _cli_subcommands:
         from kafka_mcp.adapters.inbound.cli import main as cli_main
