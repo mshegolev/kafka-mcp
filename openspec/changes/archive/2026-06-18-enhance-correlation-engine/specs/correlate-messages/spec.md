@@ -1,6 +1,6 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
-### Requirement: Correlate messages across topics with enhanced parameters
+### Requirement: Correlate messages with enhanced parameters
 The system SHALL allow users to correlate messages across multiple Kafka topics with enhanced parameters including pattern matching, traversal direction, and depth controls.
 
 #### Scenario: Correlate messages with regex pattern matching
@@ -15,7 +15,7 @@ The system SHALL allow users to correlate messages across multiple Kafka topics 
 - **WHEN** a user calls correlate_messages with a maximum depth parameter set to 3
 - **THEN** the system stops correlation traversal after 3 hops and returns the correlation chain up to that depth
 
-### Requirement: Correlate messages output includes enhanced correlation chain information
+### Requirement: Enhanced correlation chain information
 The system SHALL include enhanced correlation chain information in the output that indicates traversal direction and pattern matching details.
 
 #### Scenario: Correlation output includes traversal direction
