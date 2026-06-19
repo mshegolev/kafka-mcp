@@ -15,39 +15,39 @@ Requirements for the v1.2 release. Each maps to exactly one roadmap phase.
 
 ### Multi-topic search (MTS)
 
-- [ ] **MTS-01**: `search_messages` accepts `topics: list[str]` (in addition to
+- [x] **MTS-01**: `search_messages` accepts `topics: list[str]` (in addition to
   the existing single-topic path) and returns results merged and sorted by
   `timestamp_utc` across all specified topics in a single call.
-- [ ] **MTS-02**: Multi-topic search preserves all existing single-topic behavior
+- [x] **MTS-02**: Multi-topic search preserves all existing single-topic behavior
   (key filter, `time_from`/`time_to`, `limit`, Avro/Protobuf/JSON decode) with
   no regressions — existing callers passing a single topic see identical results.
 
 ### Header filtering (HDR)
 
-- [ ] **HDR-01**: `search_messages` accepts an optional `headers: dict[str, str]`
+- [x] **HDR-01**: `search_messages` accepts an optional `headers: dict[str, str]`
   parameter to filter messages whose Kafka headers contain all specified
   key-value pairs (e.g. `headers={"trace_id": "abc-123"}`).
-- [ ] **HDR-02**: Header filtering combines with the existing key + time window +
+- [x] **HDR-02**: Header filtering combines with the existing key + time window +
   topics filters using AND semantics — a message must match all active filters
   to appear in results.
 
 ### Correlation (COR)
 
-- [ ] **COR-01**: A new `correlate_messages` capability accepts initial search
+- [x] **COR-01**: A new `correlate_messages` capability accepts initial search
   results (or a starting key + topics) and extracts correlated entity IDs by
   scanning message values and headers for configurable ID field patterns
   (e.g. `trace_id`, `order_id`, `parent_id`).
-- [ ] **COR-02**: `correlate_messages` follows extracted IDs into additional
+- [x] **COR-02**: `correlate_messages` follows extracted IDs into additional
   topics (specified or auto-discovered from the data) to build a cross-service
   event chain, returning all correlated messages merged and sorted by timestamp.
-- [ ] **COR-03**: Correlation output carries Investigator-Contract Evidence fields
+- [x] **COR-03**: Correlation output carries Investigator-Contract Evidence fields
   (`source="kafka"`, `event_type="correlated_message"`, `timestamp_utc`, keys)
   and includes a `correlation_chain` field linking each message to the ID path
   that discovered it, so each result is usable as a timeline data point.
 
 ### 4-face symmetry (SYM)
 
-- [ ] **SYM-01**: All new and extended capabilities (multi-topic search, header
+- [x] **SYM-01**: All new and extended capabilities (multi-topic search, header
   filter, `correlate_messages`) are exposed identically across lib `KafkaClient`,
   MCP stdio tool, FastAPI `/tools/*` POST endpoint, and `kafka-mcp` CLI
   subcommand — all return the same schema.
@@ -88,14 +88,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MTS-01 | Phase 8: Multi-Topic Search & Header Filtering | Pending |
-| MTS-02 | Phase 8: Multi-Topic Search & Header Filtering | Pending |
-| HDR-01 | Phase 8: Multi-Topic Search & Header Filtering | Pending |
-| HDR-02 | Phase 8: Multi-Topic Search & Header Filtering | Pending |
-| COR-01 | Phase 9: Correlation Engine | Pending |
-| COR-02 | Phase 9: Correlation Engine | Pending |
-| COR-03 | Phase 9: Correlation Engine | Pending |
-| SYM-01 | Phase 10: 4-Face Symmetry & Integration Tests | Pending |
+| MTS-01 | Phase 8: Multi-Topic Search & Header Filtering | ✅ Completed |
+| MTS-02 | Phase 8: Multi-Topic Search & Header Filtering | ✅ Completed |
+| HDR-01 | Phase 8: Multi-Topic Search & Header Filtering | ✅ Completed |
+| HDR-02 | Phase 8: Multi-Topic Search & Header Filtering | ✅ Completed |
+| COR-01 | Phase 9: Correlation Engine | ✅ Completed |
+| COR-02 | Phase 9: Correlation Engine | ✅ Completed |
+| COR-03 | Phase 9: Correlation Engine | ✅ Completed |
+| SYM-01 | Phase 10: 4-Face Symmetry & Integration Tests | ✅ Completed |
 
 **Coverage:**
 - v1.2 requirements: 8 total
