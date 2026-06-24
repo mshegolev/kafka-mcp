@@ -375,6 +375,44 @@ class TestConfigErrorContract:
                 )
 
 
+class TestKafkaMcpSettingsSSL:
+    """T-NRG-01: SSL client-certificate fields parse and hide the key password."""
+
+    def test_ssl_fields_parsed(self) -> None:
+        from kafka_mcp.config import KafkaMcpSettings
+
+        settings = KafkaMcpSettings(
+            bootstrap_servers="localhost:9092",
+            ssl_certificate_location="/c.pem",
+            ssl_key_location="/k.pem",
+            ssl_ca_location="/ca.pem",
+            ssl_key_password="pw",
+        )
+        assert settings.ssl_certificate_location == "/c.pem"
+        assert settings.ssl_key_location == "/k.pem"
+        assert settings.ssl_ca_location == "/ca.pem"
+        assert settings.ssl_key_password is not None
+        assert settings.ssl_key_password.get_secret_value() == "pw"
+
+    def test_ssl_fields_default_none(self) -> None:
+        from kafka_mcp.config import KafkaMcpSettings
+
+        settings = KafkaMcpSettings(bootstrap_servers="localhost:9092")
+        assert settings.ssl_certificate_location is None
+        assert settings.ssl_key_location is None
+        assert settings.ssl_ca_location is None
+        assert settings.ssl_key_password is None
+
+    def test_ssl_key_password_not_in_repr(self) -> None:
+        from kafka_mcp.config import KafkaMcpSettings
+
+        settings = KafkaMcpSettings(
+            bootstrap_servers="localhost:9092",
+            ssl_key_password="super-secret-pw",
+        )
+        assert "super-secret-pw" not in repr(settings)
+
+
 # ---------------------------------------------------------------------------
 # Phase 1 success criterion tests
 # ---------------------------------------------------------------------------

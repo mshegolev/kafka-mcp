@@ -91,6 +91,19 @@ class ConfluentConsumerAdapter:
             if settings.sasl_password is not None:
                 conf["sasl.password"] = settings.sasl_password.get_secret_value()
 
+        # mTLS client-certificate material (T-NRG-01). Per-field guards so any
+        # subset can be set; unset fields add nothing, preserving existing
+        # SASL/PLAINTEXT behavior byte-for-byte (T-NRG-02). The key password is
+        # unwrapped inline and never stored on an attribute or logged.
+        if settings.ssl_certificate_location is not None:
+            conf["ssl.certificate.location"] = settings.ssl_certificate_location
+        if settings.ssl_key_location is not None:
+            conf["ssl.key.location"] = settings.ssl_key_location
+        if settings.ssl_ca_location is not None:
+            conf["ssl.ca.location"] = settings.ssl_ca_location
+        if settings.ssl_key_password is not None:
+            conf["ssl.key.password"] = settings.ssl_key_password.get_secret_value()
+
         self._consumer: Consumer = Consumer(conf)
 
         # AdminClient for read-only admin queries (consumer_group_lag).
@@ -107,6 +120,16 @@ class ConfluentConsumerAdapter:
                 admin_conf["sasl.username"] = settings.sasl_username
             if settings.sasl_password is not None:
                 admin_conf["sasl.password"] = settings.sasl_password.get_secret_value()
+        # Same mTLS material for AdminClient so admin queries connect with the
+        # same client cert/key/CA (T-NRG-01).
+        if settings.ssl_certificate_location is not None:
+            admin_conf["ssl.certificate.location"] = settings.ssl_certificate_location
+        if settings.ssl_key_location is not None:
+            admin_conf["ssl.key.location"] = settings.ssl_key_location
+        if settings.ssl_ca_location is not None:
+            admin_conf["ssl.ca.location"] = settings.ssl_ca_location
+        if settings.ssl_key_password is not None:
+            admin_conf["ssl.key.password"] = settings.ssl_key_password.get_secret_value()
         self._admin: AdminClient = AdminClient(admin_conf)
 
     # ------------------------------------------------------------------

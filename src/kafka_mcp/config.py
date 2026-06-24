@@ -114,6 +114,22 @@ class KafkaMcpSettings(BaseSettings):
     """SASL password — stored as SecretStr, never logged (T-01-01)."""
 
     # ------------------------------------------------------------------ #
+    # SSL / mTLS client certificate (T-NRG-01)                            #
+    # ------------------------------------------------------------------ #
+
+    ssl_certificate_location: str | None = None
+    """Path to the client certificate (PEM) for mTLS (ssl.certificate.location)."""
+
+    ssl_key_location: str | None = None
+    """Path to the client private key (PEM) for mTLS (ssl.key.location)."""
+
+    ssl_ca_location: str | None = None
+    """Path to the CA certificate (PEM) verifying the broker (ssl.ca.location)."""
+
+    ssl_key_password: SecretStr | None = None
+    """Private-key password — stored as SecretStr, never logged (T-NRG-01)."""
+
+    # ------------------------------------------------------------------ #
     # Schema Registry (D-03)                                              #
     # ------------------------------------------------------------------ #
 

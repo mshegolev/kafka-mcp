@@ -532,6 +532,83 @@ class TestConfluentConsumerAdapterConfig:
             f"sasl.* keys must be omitted for TLS-only config: {captured_conf}"
         )
 
+    def test_ssl_cert_keys_added_when_fields_set(self) -> None:
+        """mTLS: ssl.* keys present (key.password unwrapped) and no sasl.* keys."""
+        from kafka_mcp.adapters.outbound.confluent_consumer import (
+            ConfluentConsumerAdapter,
+        )
+        from kafka_mcp.config import KafkaMcpSettings
+
+        captured_conf: dict = {}
+
+        def fake_consumer(conf: dict) -> MagicMock:
+            captured_conf.update(conf)
+            return MagicMock()
+
+        settings = KafkaMcpSettings(
+            bootstrap_servers="localhost:9092",
+            security_protocol="SSL",
+            ssl_certificate_location="/c.pem",
+            ssl_key_location="/k.pem",
+            ssl_ca_location="/ca.pem",
+            ssl_key_password="pw",
+        )
+        with (
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
+                side_effect=fake_consumer,
+            ),
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.AdminClient",
+                return_value=MagicMock(),
+            ),
+        ):
+            ConfluentConsumerAdapter(settings)
+
+        assert captured_conf.get("security.protocol") == "SSL"
+        assert captured_conf.get("ssl.certificate.location") == "/c.pem"
+        assert captured_conf.get("ssl.key.location") == "/k.pem"
+        assert captured_conf.get("ssl.ca.location") == "/ca.pem"
+        # key password is unwrapped to the plaintext string in the conf dict
+        assert captured_conf.get("ssl.key.password") == "pw"
+        assert not any(k.startswith("sasl.") for k in captured_conf), (
+            f"sasl.* keys must be omitted for mTLS config: {captured_conf}"
+        )
+
+    def test_ssl_cert_keys_omitted_when_fields_unset(self) -> None:
+        """Backward-compat: no ssl.* cert keys when SSL fields are unset (T-NRG-02)."""
+        from kafka_mcp.adapters.outbound.confluent_consumer import (
+            ConfluentConsumerAdapter,
+        )
+        from kafka_mcp.config import KafkaMcpSettings
+
+        captured_conf: dict = {}
+
+        def fake_consumer(conf: dict) -> MagicMock:
+            captured_conf.update(conf)
+            return MagicMock()
+
+        settings = KafkaMcpSettings(bootstrap_servers="localhost:9092")
+        with (
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
+                side_effect=fake_consumer,
+            ),
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.AdminClient",
+                return_value=MagicMock(),
+            ),
+        ):
+            ConfluentConsumerAdapter(settings)
+
+        for key in (
+            "ssl.certificate.location",
+            "ssl.key.location",
+            "ssl.ca.location",
+            "ssl.key.password",
+        ):
+            assert key not in captured_conf, f"{key} must be omitted when unset"
+
     def test_sasl_keys_added_only_when_mechanism_set(self) -> None:
         """SASL keys are configured only when a mechanism is requested."""
         from kafka_mcp.adapters.outbound.confluent_consumer import (
