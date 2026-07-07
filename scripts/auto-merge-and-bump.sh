@@ -40,13 +40,16 @@ check_ci_status() {
     fi
 
     # Ждём завершения последнего run на ветке (макс ~5 мин).
-    local tries=0 status conclusion
+    # status и conclusion берём ОДНИМ запросом, чтобы не поймать разные ранны.
+    local tries=0 line status conclusion
     while [ "$tries" -lt 30 ]; do
-        status=$(gh run list --branch "$branch" --limit 1 \
-            --json status --jq '.[0].status // "none"' 2>/dev/null || echo "none")
+        line=$(gh run list --branch "$branch" --limit 1 \
+            --json status,conclusion \
+            --jq '"\(.[0].status // "none")|\(.[0].conclusion // "unknown")"' \
+            2>/dev/null || echo "none|unknown")
+        status=${line%%|*}
+        conclusion=${line#*|}
         if [ "$status" = "completed" ]; then
-            conclusion=$(gh run list --branch "$branch" --limit 1 \
-                --json conclusion --jq '.[0].conclusion // "unknown"' 2>/dev/null || echo "unknown")
             if [ "$conclusion" = "success" ]; then
                 echo "✅ CI passed (conclusion=success)"
             else
