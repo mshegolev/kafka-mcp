@@ -23,6 +23,10 @@ versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **PyPI distribution renamed to `kafka-events-mcp`** (`pip install kafka-events-mcp`);
+  the import package `kafka_mcp` and the `kafka-mcp` CLI command are unchanged. The
+  bare `kafka-mcp` name on PyPI belongs to an unrelated project.
+- Publishing now uses OIDC Trusted Publishing instead of stored API tokens.
 - Modernized domain typing to PEP 604 built-in generics (`list[str]`, `X | None`),
   dropping the legacy `typing.List/Optional/...` aliases.
 

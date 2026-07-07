@@ -53,7 +53,7 @@ All tools are read-only (`readOnlyHint=true`, plus `idempotentHint=true` and
 ## Install
 
 ```bash
-pip install kafka-mcp
+pip install kafka-events-mcp
 # or, for local development:
 uv sync --extra dev
 ```
