@@ -7,6 +7,31 @@ versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-07
+
+### Added
+
+- **`correlate_messages` tool** (MCP stdio, HTTP MCP, REST) — correlate messages
+  across topics by following extracted IDs, with advanced pattern matching
+  (regex / JSONPath), bidirectional traversal, and configurable depth/breadth limits.
+- **`consumer_group_lag` tool** — per-partition consumer lag (committed vs end offset)
+  for a consumer group.
+- **SSL client-certificate (mTLS) settings** on `KafkaMcpSettings` for
+  authenticated broker connections.
+- **Richer tool annotations** — all read-only tools now carry `idempotentHint=True`
+  and `openWorldHint=True` in addition to `readOnlyHint=True`.
+
+### Changed
+
+- Modernized domain typing to PEP 604 built-in generics (`list[str]`, `X | None`),
+  dropping the legacy `typing.List/Optional/...` aliases.
+
+### Fixed
+
+- `search_messages` now raises an actionable `ValueError` (naming the parameter and
+  expected format, accepting a trailing `Z`) instead of leaking the raw
+  `datetime.fromisoformat` error to the MCP host.
+
 ## [0.1.0] - 2026-06-08
 
 ### Added
@@ -50,4 +75,5 @@ versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 - **MIT License** — standard OSI canonical text
 
 [0.1.0]: https://github.com/OWNER/kafka-mcp/releases/tag/v0.1.0
-[Unreleased]: https://github.com/OWNER/kafka-mcp/compare/v0.1.0...HEAD
+[0.2.0]: https://github.com/OWNER/kafka-mcp/compare/v0.1.0...v0.2.0
+[Unreleased]: https://github.com/OWNER/kafka-mcp/compare/v0.2.0...HEAD
