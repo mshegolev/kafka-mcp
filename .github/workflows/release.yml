@@ -8,7 +8,8 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
-# Default: read-only. Only pypi-publish elevates to id-token: write.
+# Default: read-only. The publish jobs elevate to id-token: write so PyPI /
+# TestPyPI can verify the OIDC Trusted Publisher — no API tokens are stored.
 permissions:
   contents: read
 
@@ -45,24 +46,20 @@ jobs:
   testpypi-upload:
     needs: [build]
     runs-on: ubuntu-latest
+    # OIDC Trusted Publisher on test.pypi.org — no TWINE_PASSWORD / stored token.
+    permissions:
+      id-token: write
     steps:
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install twine
-        run: pip install twine
-
       - uses: actions/download-artifact@v4
         with:
           name: release-dist
           path: dist/
 
-      - name: Upload to TestPyPI
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.TEST_PYPI_TOKEN }}
-        run: python -m twine upload --repository testpypi --skip-existing --verbose dist/*
+      - name: Publish to TestPyPI (Trusted Publishing)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
 
   # ---------------------------------------------------------------------------
   # pypi-publish: live PyPI publish — ONLY on tag push, gated by environment
@@ -71,7 +68,8 @@ jobs:
   #   - Condition: tag push only — workflow_dispatch cannot trigger live publish
   #   - environment: pypi requires manual approval in GitHub repo settings
   #   - id-token: write granted only to this job (OIDC Trusted Publisher)
-  #   - Token from ${{ secrets.PYPI_TOKEN }} — never hardcoded (T-07-02)
+  #   - No stored token: PyPI verifies the OIDC identity via a Trusted Publisher
+  #     configured for repo mshegolev/kafka-mcp, workflow release.yml, env pypi
   # ---------------------------------------------------------------------------
   pypi-publish:
     needs: [testpypi-upload]
@@ -86,8 +84,7 @@ jobs:
           name: release-dist
           path: dist/
 
-      - name: Publish to PyPI
+      - name: Publish to PyPI (Trusted Publishing)
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          password: ${{ secrets.PYPI_TOKEN }}
           skip-existing: true
