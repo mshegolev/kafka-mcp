@@ -44,9 +44,11 @@ and safe:
 | `describe_topic` | Partition count and current low/high offsets for a topic. |
 | `get_message` | Retrieve a single message by `topic` / `partition` / `offset`. |
 | `search_messages` | Find messages by exact key within a time window; decoded via Schema Registry. |
+| `consumer_group_lag` | Report per-partition consumer lag (committed vs end offset) for a consumer group. |
 | `correlate_messages` | Correlate messages across topics by following extracted IDs with advanced pattern matching. |
 
-All tools are read-only (`readOnlyHint=true`).
+All tools are read-only (`readOnlyHint=true`, plus `idempotentHint=true` and
+`openWorldHint=true`).
 
 ## Install
 

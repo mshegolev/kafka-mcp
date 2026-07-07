@@ -1,15 +1,18 @@
 """MCP stdio inbound adapter — registers read-only Kafka tools via FastMCP.
 
-Exposes five tools that delegate to KafkaClient:
+Exposes six tools that delegate to KafkaClient:
   - list_topics: returns sorted list of topic names
   - describe_topic: returns TopicInfo metadata for a single topic
   - search_messages: search messages by key within a time window
   - get_message: fetch and decode a single message by coordinates
   - consumer_group_lag: report per-partition consumer lag for a group
+  - correlate_messages: follow extracted IDs across topics into a chain
 
-All tools carry ``readOnlyHint=True`` on their ToolAnnotations (D-13, D-14).
+All tools carry ``readOnlyHint=True`` on their ToolAnnotations (D-13, D-14),
+plus ``idempotentHint=True`` (repeated reads have no side effects) and
+``openWorldHint=True`` (they query an external Kafka broker).
 Defense-in-depth: the structural assign-based consumer (no subscribe/commit)
-is the primary read-only guarantee; readOnlyHint is advisory to the MCP host.
+is the primary read-only guarantee; the hints are advisory to the MCP host.
 
 Usage::
 
@@ -38,7 +41,41 @@ from kafka_mcp.domain.errors import (
 )
 from kafka_mcp.domain.models import KafkaMessage, LagRecord
 
-_READ_ONLY = ToolAnnotations(readOnlyHint=True)
+_READ_ONLY = ToolAnnotations(
+    readOnlyHint=True,
+    idempotentHint=True,
+    openWorldHint=True,
+)
+
+
+def _parse_iso_utc(value: str, param: str) -> datetime:
+    """Parse an ISO-8601 timestamp string, defaulting naive values to UTC.
+
+    Accepts a trailing ``Z`` (UTC) which :func:`datetime.fromisoformat` rejects
+    on Python < 3.11. Raises a :class:`ValueError` with an actionable message
+    naming *param* and the expected format, instead of leaking the raw
+    ``fromisoformat`` error to the MCP host.
+
+    Args:
+        value: The ISO-8601 timestamp string to parse.
+        param: The tool parameter name (for the error message), e.g. ``time_from``.
+
+    Returns:
+        A timezone-aware :class:`datetime` (UTC if the input had no offset).
+
+    Raises:
+        ValueError: When *value* is not a valid ISO-8601 timestamp.
+    """
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(
+            f"Invalid {param}: {value!r} is not a valid ISO-8601 timestamp. "
+            "Use e.g. '2026-06-01T00:00:00Z' or '2026-06-01T12:30:00+00:00'."
+        ) from exc
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def _serialize_message(msg: KafkaMessage) -> dict:
@@ -93,8 +130,10 @@ def create_mcp_server(client: KafkaClient) -> FastMCP:
     - ``search_messages`` — returns list[dict] of KafkaMessage dicts
     - ``get_message`` — returns a single KafkaMessage dict
     - ``consumer_group_lag`` — returns list[dict] of LagRecord dicts
+    - ``correlate_messages`` — returns list[dict] of correlated KafkaMessage dicts
 
-    All tools have ``readOnlyHint=True`` per D-13/D-14.
+    All tools have ``readOnlyHint=True`` per D-13/D-14, plus
+    ``idempotentHint=True`` and ``openWorldHint=True``.
 
     Args:
         client: A :class:`~kafka_mcp.adapters.inbound.lib.KafkaClient`
@@ -172,12 +211,8 @@ def create_mcp_server(client: KafkaClient) -> FastMCP:
         """
         # WR-01: clamp limit to [1, 10000] to prevent unbounded scan via MCP.
         limit = max(1, min(limit, 10_000))
-        tf = datetime.fromisoformat(time_from) if time_from is not None else None
-        if tf is not None and tf.tzinfo is None:
-            tf = tf.replace(tzinfo=timezone.utc)
-        tt = datetime.fromisoformat(time_to) if time_to is not None else None
-        if tt is not None and tt.tzinfo is None:
-            tt = tt.replace(tzinfo=timezone.utc)
+        tf = _parse_iso_utc(time_from, "time_from") if time_from is not None else None
+        tt = _parse_iso_utc(time_to, "time_to") if time_to is not None else None
         results = client.search_messages(
             key,
             key_field=key_field,
@@ -257,10 +292,7 @@ def create_mcp_server(client: KafkaClient) -> FastMCP:
         bidirectional: bool = False,
     ) -> list[dict]:  # noqa: D401
         """Correlate messages by following extracted IDs into additional topics."""
-        # Convert dict data back to KafkaMessage objects
-        from kafka_mcp.domain.models import KafkaMessage
-        import base64
-
+        # Convert dict data back to KafkaMessage objects (inverse of _serialize_message).
         initial_results: list[KafkaMessage] = []
         for msg_data in initial_results_data:
             # Handle base64 decoding of raw fields
@@ -270,8 +302,6 @@ def create_mcp_server(client: KafkaClient) -> FastMCP:
                 msg_data["raw_key"] = base64.b64decode(msg_data["raw_key"])
             # Handle timestamp parsing
             if "timestamp_utc" in msg_data and isinstance(msg_data["timestamp_utc"], str):
-                from datetime import datetime, timezone
-
                 msg_data["timestamp_utc"] = datetime.fromisoformat(msg_data["timestamp_utc"].replace("Z", "+00:00"))
             initial_results.append(KafkaMessage(**msg_data))
 

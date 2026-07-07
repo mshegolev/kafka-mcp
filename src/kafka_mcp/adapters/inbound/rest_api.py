@@ -6,6 +6,7 @@ Exposes:
   POST /tools/search_messages        — body: SearchMessagesRequest
   POST /tools/get_message            — body: GetMessageRequest
   POST /tools/consumer_group_lag     — body: ConsumerGroupLagRequest
+  POST /tools/correlate_messages     — body: CorrelateMessagesRequest
 
 Route names follow the MCP tool-call convention (D-16): POST /tools/{tool_name}
 taking a JSON body.  No REST-resource routes like /topics or /describe.
@@ -46,7 +47,11 @@ from kafka_mcp.domain.errors import (
 )
 from kafka_mcp.domain.models import KafkaMessage, LagRecord
 
-_READ_ONLY = ToolAnnotations(readOnlyHint=True)
+_READ_ONLY = ToolAnnotations(
+    readOnlyHint=True,
+    idempotentHint=True,
+    openWorldHint=True,
+)
 
 # ---------------------------------------------------------------------------
 # Request models (T-04-01: Pydantic validates inputs at the boundary)
@@ -186,8 +191,9 @@ def _serialize_lag_record(record: LagRecord) -> dict:
 def _create_http_mcp_server(client: KafkaClient) -> FastMCP:
     """Build and return a FastMCP server wired to *client* for HTTP transport.
 
-    Registers the same four read-only tools as the stdio MCP server
-    (HTTP-01, T-04-08). All tools carry ``readOnlyHint=True``.
+    Registers the same six read-only tools as the stdio MCP server
+    (HTTP-01, T-04-08). All tools carry ``readOnlyHint=True`` plus
+    ``idempotentHint=True`` and ``openWorldHint=True``.
 
     Args:
         client: A :class:`~kafka_mcp.adapters.inbound.lib.KafkaClient`
@@ -312,10 +318,7 @@ def _create_http_mcp_server(client: KafkaClient) -> FastMCP:
         limit: int = 500,
     ) -> list[dict]:  # noqa: D401
         """Correlate messages by following extracted IDs into additional topics."""
-        # Convert dict data back to KafkaMessage objects
-        from kafka_mcp.domain.models import KafkaMessage
-        import base64
-
+        # Convert dict data back to KafkaMessage objects (inverse of _serialize_message).
         initial_results: list[KafkaMessage] = []
         for msg_data in initial_results_data:
             # Handle base64 decoding of raw fields
@@ -325,8 +328,6 @@ def _create_http_mcp_server(client: KafkaClient) -> FastMCP:
                 msg_data["raw_key"] = base64.b64decode(msg_data["raw_key"])
             # Handle timestamp parsing
             if "timestamp_utc" in msg_data and isinstance(msg_data["timestamp_utc"], str):
-                from datetime import datetime, timezone
-
                 msg_data["timestamp_utc"] = datetime.fromisoformat(msg_data["timestamp_utc"].replace("Z", "+00:00"))
             initial_results.append(KafkaMessage(**msg_data))
 
@@ -511,10 +512,7 @@ def create_app(client: KafkaClient) -> FastAPI:
         Returns:
             ``{"result": [...]}`` — list of correlated message dicts with base64 raw.
         """
-        # Convert dict data back to KafkaMessage objects
-        from kafka_mcp.domain.models import KafkaMessage
-        import base64
-
+        # Convert dict data back to KafkaMessage objects (inverse of _serialize_message).
         initial_results: list[KafkaMessage] = []
         for msg_data in req.initial_results:
             # Handle base64 decoding of raw fields
@@ -524,7 +522,7 @@ def create_app(client: KafkaClient) -> FastAPI:
                 msg_data["raw_key"] = base64.b64decode(msg_data["raw_key"])
             # Handle timestamp parsing
             if "timestamp_utc" in msg_data and isinstance(msg_data["timestamp_utc"], str):
-                from datetime import datetime, timezone
+                from datetime import datetime
 
                 msg_data["timestamp_utc"] = datetime.fromisoformat(msg_data["timestamp_utc"].replace("Z", "+00:00"))
             initial_results.append(KafkaMessage(**msg_data))
