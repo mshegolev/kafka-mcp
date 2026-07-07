@@ -239,7 +239,7 @@ def _extract_correlation_ids(msg: KafkaMessage) -> set[str]:
             ids.add(val)
 
     # Also check evidence keys for correlation IDs
-    for key, val in msg.keys.items():
+    for val in msg.keys.values():
         if val is not None:
             ids.add(val)
 

@@ -12,7 +12,6 @@ No broker library, HTTP library, or web framework imports are present.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional, Set, Union
 
 from kafka_mcp.domain.models import KafkaMessage
 from kafka_mcp.domain.search_service import TopicService
@@ -20,7 +19,7 @@ from kafka_mcp.ports.consumer import ConsumerPort
 from kafka_mcp.ports.schema_registry import SchemaRegistryPort
 
 
-def _extract_correlation_ids(msg: KafkaMessage, regex_patterns: Optional[List[str]] = None) -> set[str]:
+def _extract_correlation_ids(msg: KafkaMessage, regex_patterns: list[str] | None = None) -> set[str]:
     """Extract correlation IDs from message value and headers.
 
     Looks for common correlation field names in both message value and headers.
@@ -97,7 +96,7 @@ def _extract_correlation_ids(msg: KafkaMessage, regex_patterns: Optional[List[st
                 pass
 
     # Also check evidence keys for correlation IDs
-    for key, val in msg.keys.items():
+    for val in msg.keys.values():
         if val is not None:
             ids.add(val)
 
@@ -215,10 +214,10 @@ class CorrelationService:
         initial_results: list[KafkaMessage],
         follow_topics: list[str],
         limit: int = 500,
-        regex_patterns: Optional[List[str]] = None,
-        jsonpath_expressions: Optional[List[str]] = None,
-        max_depth: Optional[int] = None,
-        max_breadth: Optional[int] = None,
+        regex_patterns: list[str] | None = None,
+        jsonpath_expressions: list[str] | None = None,
+        max_depth: int | None = None,
+        max_breadth: int | None = None,
         bidirectional: bool = False,
     ) -> list[KafkaMessage]:
         """Correlate messages by following extracted IDs into additional topics.
@@ -379,8 +378,8 @@ class CorrelationService:
     def _extract_all_correlation_ids(
         self,
         messages: list[KafkaMessage],
-        regex_patterns: Optional[List[str]] = None,
-        jsonpath_expressions: Optional[List[str]] = None,
+        regex_patterns: list[str] | None = None,
+        jsonpath_expressions: list[str] | None = None,
     ) -> set[str]:
         """Extract all unique correlation IDs from a list of messages.
 

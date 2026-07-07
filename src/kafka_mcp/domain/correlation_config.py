@@ -6,8 +6,6 @@ including regex patterns, JSONPath expressions, and correlation limits.
 
 from __future__ import annotations
 
-from typing import List, Optional
-
 from pydantic import BaseModel, Field
 
 
@@ -18,15 +16,15 @@ class CorrelationPatternConfig(BaseModel):
     from Kafka messages.
     """
 
-    regex_patterns: List[str] = Field(
+    regex_patterns: list[str] = Field(
         default_factory=list, description="List of regex patterns for ID extraction from message content."
     )
 
-    jsonpath_expressions: List[str] = Field(
+    jsonpath_expressions: list[str] = Field(
         default_factory=list, description="List of JSONPath expressions for structured data ID extraction."
     )
 
-    xpath_expressions: List[str] = Field(
+    xpath_expressions: list[str] = Field(
         default_factory=list, description="List of XPath expressions for XML data ID extraction."
     )
 
@@ -38,15 +36,15 @@ class CorrelationLimitsConfig(BaseModel):
     correlation operations.
     """
 
-    max_depth: Optional[int] = Field(
+    max_depth: int | None = Field(
         default=None, description="Maximum correlation depth (number of hops). None means unlimited.", ge=1
     )
 
-    max_breadth: Optional[int] = Field(
+    max_breadth: int | None = Field(
         default=None, description="Maximum correlation breadth per level. None means unlimited.", ge=1
     )
 
-    timeout_seconds: Optional[int] = Field(
+    timeout_seconds: int | None = Field(
         default=30, description="Timeout for correlation operations in seconds.", ge=1, le=300
     )
 

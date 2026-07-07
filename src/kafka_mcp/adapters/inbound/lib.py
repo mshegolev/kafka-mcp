@@ -35,9 +35,9 @@ from kafka_mcp.adapters.outbound.confluent_consumer import (
     ConfluentConsumerAdapter,
 )
 from kafka_mcp.config import KafkaMcpSettings
+from kafka_mcp.domain.correlation_service import CorrelationService
 from kafka_mcp.domain.models import KafkaMessage, LagRecord, TopicInfo
 from kafka_mcp.domain.search_service import TopicService
-from kafka_mcp.domain.correlation_service import CorrelationService
 from kafka_mcp.ports.consumer import ConsumerPort
 from kafka_mcp.ports.schema_registry import SchemaRegistryPort
 
