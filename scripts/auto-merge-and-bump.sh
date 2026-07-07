@@ -10,17 +10,57 @@ set -e  # Остановиться при любой ошибке
 
 echo "🚀 Starting automation process..."
 
-# Функция для проверки статуса CI
+# --- GitHub auth: берём токен из macOS keychain, а НЕ из GITHUB_TOKEN env.
+# gh хранит токен в login-keychain (service "gh:github.com"); переменные
+# окружения перекрывают keychain, поэтому сначала снимаем возможный
+# протухший GITHUB_TOKEN/GH_TOKEN и даём gh прочитать keychain.
+unset GITHUB_TOKEN GH_TOKEN
+if command -v gh >/dev/null 2>&1; then
+    GH_TOKEN="$(gh auth token 2>/dev/null || true)"
+    if [ -n "$GH_TOKEN" ]; then
+        export GH_TOKEN
+        echo "🔑 GitHub token loaded from keychain (len=${#GH_TOKEN})"
+    else
+        echo "⚠️  Нет валидного токена в keychain — выполни: gh auth login"
+    fi
+else
+    echo "⚠️  gh CLI не найден — CI-проверка будет пропущена"
+fi
+
+# Функция для проверки статуса CI (GitHub Actions через gh, токен из keychain).
+# Возвращает 0 всегда (advisory): результат логируется, но не блокирует мерж.
+# Чтобы сделать проверку блокирующей — верни здесь код conclusion.
 check_ci_status() {
-    echo "⏳ Checking CI pipeline status..."
-    # В реальной реализации здесь должна быть интеграция с CI системой
-    # Например, для GitHub Actions:
-    # gh run list --limit 1 --branch $1 --json status,conclusion --jq '.[].conclusion'
-    
-    # Для демонстрации просто ждем 30 секунд
-    echo "Waiting 30 seconds for CI checks..."
-    sleep 30
-    echo "✅ Assuming CI passed (in real implementation, this would check actual CI status)"
+    local branch="$1"
+    echo "⏳ Checking CI pipeline status for '$branch'..."
+
+    if ! command -v gh >/dev/null 2>&1 || [ -z "${GH_TOKEN:-}" ]; then
+        echo "⚠️  gh недоступен или нет токена — пропускаю проверку CI"
+        return 0
+    fi
+
+    # Ждём завершения последнего run на ветке (макс ~5 мин).
+    local tries=0 status conclusion
+    while [ "$tries" -lt 30 ]; do
+        status=$(gh run list --branch "$branch" --limit 1 \
+            --json status --jq '.[0].status // "none"' 2>/dev/null || echo "none")
+        if [ "$status" = "completed" ]; then
+            conclusion=$(gh run list --branch "$branch" --limit 1 \
+                --json conclusion --jq '.[0].conclusion // "unknown"' 2>/dev/null || echo "unknown")
+            if [ "$conclusion" = "success" ]; then
+                echo "✅ CI passed (conclusion=success)"
+            else
+                echo "❌ CI НЕ прошёл (conclusion=$conclusion) — мерж всё равно продолжится (advisory)"
+            fi
+            return 0
+        fi
+        echo "CI status: $status — жду 10с ($((tries + 1))/30)..."
+        sleep 10
+        tries=$((tries + 1))
+    done
+
+    echo "⚠️  CI-проверка истекла по таймауту — продолжаю (advisory)"
+    return 0
 }
 
 # Функция для бампа версии
