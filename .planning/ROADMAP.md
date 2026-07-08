@@ -63,7 +63,7 @@ brick stays structurally read-only and its tool surface is frozen.
 
 - [x] **Phase 11: mTLS Transport Hardening** — Verify client-certificate mTLS is wired into both consumer and admin config, prove it end-to-end against a real SSL broker, and document setup in README (completed 2026-07-08)
 - [x] **Phase 12: Tool-Surface Robustness & Coverage** — Assert `idempotentHint`/`openWorldHint` annotations across all faces, harden `search_messages` timestamp errors, and add coverage for `consumer_group_lag` and `correlate_messages` (completed 2026-07-08)
-- [ ] **Phase 13: Packaging & OIDC Release** — Lock the `kafka-events-mcp` distribution identity end-to-end and verify the OIDC Trusted Publishing release path with no stored tokens
+- [x] **Phase 13: Packaging & OIDC Release** — Lock the `kafka-events-mcp` distribution identity end-to-end and verify the OIDC Trusted Publishing release path with no stored tokens (completed 2026-07-09)
 
 ## Phase Details
 
@@ -188,6 +188,6 @@ Plans:
 | 10. 4-Face Symmetry & Integration Tests | v1.2 | 1/1 | Complete | 2026-06-18 |
 | 11. mTLS Transport Hardening | v1.3 | 2/2 | Complete   | 2026-07-08 |
 | 12. Tool-Surface Robustness & Coverage | v1.3 | 2/2 | Complete   | 2026-07-08 |
-| 13. Packaging & OIDC Release | v1.3 | 0/? | Not started | - |
+| 13. Packaging & OIDC Release | v1.3 | 1/1 | Complete   | 2026-07-09 |
 </content>
 </invoke>
