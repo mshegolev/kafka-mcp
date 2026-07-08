@@ -1,5 +1,18 @@
 # Milestones
 
+## v1.3 v1.3 (Shipped: 2026-07-08)
+
+**Phases completed:** 3 phases, 5 plans, 7 tasks
+
+**Key accomplishments:**
+
+- 1. [Rule 1/3 — Bug + Blocking test isolation] `.env`-leak broke hermetic config tests
+- Env-gated real-broker mTLS integration test that runs read-only list_topics()/describe_topic() over a client-certificate TLS handshake, skipping cleanly when broker + cert env are absent so CI-without-broker stays green.
+- Test-only lock proving every read-only tool on the stdio + HTTP MCP faces advertises readOnlyHint/idempotentHint/openWorldHint (all True) and that `_parse_iso_utc` rejects bad time_from/time_to with an actionable param-named error while accepting trailing-Z / naive input as tz-aware UTC.
+- Test-only face coverage for consumer_group_lag and correlate_messages across stdio MCP, HTTP MCP, and REST, with the correlate_messages base64 raw + timestamp round-trip verified both inbound (reconstructed KafkaMessage on the fake) and outbound (REST response raw decodes to original bytes)
+
+---
+
 ## v1.0 MVP — Read-only Kafka MCP brick (Shipped: 2026-06-08)
 
 **Phases completed:** 3 phases, 12 plans, 20 tasks

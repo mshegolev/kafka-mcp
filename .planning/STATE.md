@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: mTLS & Packaging Hardening
-current_phase: 12
-current_phase_name: Tool Surface Robustness Coverage
-status: executing
-stopped_at: Completed 12-02-PLAN.md (COV-01 consumer_group_lag + COV-02 correlate_messages face coverage)
-last_updated: "2026-07-08T19:29:13.682Z"
-last_activity: 2026-07-09
-last_activity_desc: Completed 12-02-PLAN.md (COV-01 + COV-02 test-only face coverage)
+current_phase: 3
+status: Awaiting next milestone
+stopped_at: Completed 12-01-PLAN.md (HINT-01 + PARSE-01 test-only hardening)
+last_updated: "2026-07-08T19:41:10.145Z"
+last_activity: 2026-07-08
+last_activity_desc: Milestone v1.3 completed and archived
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 5
   completed_plans: 5
   percent: 50
+current_phase_name: Tool Surface Robustness Coverage
 ---
 
 # Project State
@@ -31,10 +31,10 @@ FastAPI.
 
 ## Current Position
 
-Phase: 12 (Tool Surface Robustness Coverage) — plans 12-01 and 12-02 complete
-Plan: 12-02 complete (COV-01 consumer_group_lag + COV-02 correlate_messages face coverage)
-Status: all Phase 12 plans executed and summarized; ready for milestone audit
-Last activity: 2026-07-09 — Completed 12-02-PLAN.md (COV-01 + COV-02 test-only face coverage)
+Phase: Milestone v1.3 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-07-08 — Milestone v1.3 completed and archived
 
 ## Performance Metrics
 
@@ -94,3 +94,7 @@ Stopped at: Completed 12-01-PLAN.md (HINT-01 + PARSE-01 test-only hardening)
 Resume file: None
 Next action: `/gsd-execute-phase 12` (plan 12-02: COV-01/COV-02)
 </content>
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone
