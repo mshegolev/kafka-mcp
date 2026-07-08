@@ -280,11 +280,15 @@ class TestKafkaClient:
             client.describe_topic("unknown")
 
     def test_from_env_raises_config_error_when_no_broker(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path
     ) -> None:
         """KafkaClient.from_env() raises ConfigError without bootstrap."""
         from kafka_mcp.adapters.inbound.lib import KafkaClient
 
+        # chdir to an empty dir so pydantic-settings finds no developer .env
+        # (a repo-root .env sets KAFKA_MCP_BOOTSTRAP_SERVERS and would mask the
+        # missing-broker path this test asserts).
+        monkeypatch.chdir(tmp_path)
         monkeypatch.delenv("KAFKA_MCP_BOOTSTRAP_SERVERS", raising=False)
         with pytest.raises(ConfigError):
             KafkaClient.from_env()
@@ -397,7 +401,11 @@ class TestKafkaMcpSettingsSSL:
     def test_ssl_fields_default_none(self) -> None:
         from kafka_mcp.config import KafkaMcpSettings
 
-        settings = KafkaMcpSettings(bootstrap_servers="localhost:9092")
+        # _env_file=None so a developer .env (which may point KAFKA_MCP_SSL_* at
+        # real cert paths) cannot contaminate the "unset defaults to None" baseline.
+        settings = KafkaMcpSettings(
+            bootstrap_servers="localhost:9092", _env_file=None
+        )
         assert settings.ssl_certificate_location is None
         assert settings.ssl_key_location is None
         assert settings.ssl_ca_location is None
