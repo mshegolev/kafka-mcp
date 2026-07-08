@@ -39,11 +39,11 @@ verifies them end-to-end and documents them, and adds the genuinely new work
 
 ### Packaging & release (PKG)
 
-- [ ] **PKG-01**: The distribution is packaged and installable as
+- [x] **PKG-01**: The distribution is packaged and installable as
   `kafka-events-mcp` — pyproject name, README install line, and CHANGELOG agree,
   and `hatch build` produces `kafka_events_mcp-*` artifacts.
 
-- [ ] **PKG-02**: Releases publish to PyPI via OIDC Trusted Publishing with no
+- [x] **PKG-02**: Releases publish to PyPI via OIDC Trusted Publishing with no
   stored API tokens; the TestPyPI + PyPI jobs and publish path are verified.
 
 ### Test coverage (COV)
@@ -81,8 +81,8 @@ Deferred beyond v1.3:
 | PARSE-01 | Phase 12 | Complete |
 | COV-01 | Phase 12 | Complete |
 | COV-02 | Phase 12 | Complete |
-| PKG-01 | Phase 13 | Pending |
-| PKG-02 | Phase 13 | Pending |
+| PKG-01 | Phase 13 | Complete |
+| PKG-02 | Phase 13 | Complete |
 
 **Coverage:** 9/9 mapped ✓
 
