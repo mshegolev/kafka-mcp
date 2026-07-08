@@ -76,6 +76,41 @@ export KAFKA_MCP_SCHEMA_REGISTRY_URL=https://sr.internal:8081
 `KAFKA_MCP_BOOTSTRAP_SERVERS` is required; a missing/empty value raises an
 actionable configuration error naming the variable.
 
+### mTLS (client-certificate TLS)
+
+For brokers that require mutual TLS, authenticate with a client certificate
+instead of (or alongside) SASL. Set `KAFKA_MCP_SECURITY_PROTOCOL=SSL` and point
+the four `KAFKA_MCP_SSL_*` variables at your certificate material:
+
+```bash
+# mTLS: client-certificate TLS to the broker.
+export KAFKA_MCP_BOOTSTRAP_SERVERS=broker1:9093,broker2:9093
+export KAFKA_MCP_SECURITY_PROTOCOL=SSL
+# Client certificate (PEM) presented to the broker:
+export KAFKA_MCP_SSL_CERTIFICATE_LOCATION=/run/secrets/kafka/client.crt.pem
+# Client private key (PEM) matching the certificate above:
+export KAFKA_MCP_SSL_KEY_LOCATION=/run/secrets/kafka/client.key.pem
+# CA certificate (PEM) used to verify the broker's server certificate:
+export KAFKA_MCP_SSL_CA_LOCATION=/run/secrets/kafka/ca.pem
+# Passphrase protecting the private key (omit if the key is unencrypted):
+export KAFKA_MCP_SSL_KEY_PASSWORD=changeit
+```
+
+`KAFKA_MCP_SECURITY_PROTOCOL=SSL` is what activates mTLS — the four
+`KAFKA_MCP_SSL_*` values are wired into librdkafka's `ssl.*` conf on **both** the
+consumer path (topic/message reads) and the admin/lag path
+(`consumer_group_lag`), so every broker connection presents the same client
+certificate. `KAFKA_MCP_SSL_KEY_PASSWORD` is held as a Pydantic `SecretStr`,
+unwrapped only into the local client conf and never logged or echoed. mTLS and
+SASL are independent: use `SECURITY_PROTOCOL=SSL` for certificate-only auth, or
+`SASL_SSL` plus the `KAFKA_MCP_SASL_*` variables for SASL over TLS.
+
+> **Security caution.** Never commit real certificates, private keys, or the key
+> passphrase to source control. Point `KAFKA_MCP_SSL_CERTIFICATE_LOCATION`,
+> `KAFKA_MCP_SSL_KEY_LOCATION`, and `KAFKA_MCP_SSL_CA_LOCATION` at mounted secret
+> paths (e.g. Kubernetes secret mounts or Docker secrets), and inject
+> `KAFKA_MCP_SSL_KEY_PASSWORD` from your secret store at runtime.
+
 ## Run
 
 ```bash
