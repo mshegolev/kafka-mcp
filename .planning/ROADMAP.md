@@ -165,7 +165,11 @@ brick stays structurally read-only and its tool surface is frozen.
   3. The release workflow publishes via PyPI OIDC Trusted Publishing (`id-token: write`, no `password`/`PYPI_API_TOKEN` secret referenced) — verifiable by inspecting `.github/workflows/release.yml` and confirming no stored token is used
   4. The TestPyPI dry-run job and the PyPI publish job are wired and the publish path is exercised end-to-end up to the live-production gate (human-gated per the "prepare-don't-live-publish" posture) — verifiable via a successful TestPyPI publish run or workflow dry-run evidence
 
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 13-01-PLAN.md — Test-only lock of the kafka-events-mcp distribution identity (PKG-01) and the OIDC Trusted Publishing release contract (PKG-02)
+
 **UI hint**: no
 
 ## Progress
