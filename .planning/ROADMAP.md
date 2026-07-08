@@ -111,7 +111,9 @@ brick stays structurally read-only and its tool surface is frozen.
   2. Absent SSL env vars, the config builders emit no `ssl.*` keys and existing PLAINTEXT/SASL behavior is unchanged — verifiable via `pytest tests/ -k "config" --tb=short` showing zero regressions on the existing config suite
   3. An integration test brings up a real SSL-enabled broker (testcontainers) with a server cert + client cert, connects the brick over mTLS, and successfully performs a read-only operation (`list_topics` and/or `describe_topic`) — verifiable via `pytest -m integration -k "mtls or ssl" -v` going green against the SSL broker
   4. README documents mTLS setup end-to-end: the `KAFKA_MCP_SSL_*` env var names, expected cert/key/CA file paths, `SECURITY_PROTOCOL=SSL`, and key-password handling — verifiable by a human following README to configure mTLS with no reference to source code
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 11-01-PLAN.md — Assert mTLS ssl.* wiring on the AdminClient conf (MTLS-01) + README mTLS docs (MTLS-03)
+- [ ] 11-02-PLAN.md — Env-gated real-broker mTLS end-to-end read-only integration test (MTLS-02)
 **UI hint**: no
 
 ### Phase 12: Tool-Surface Robustness & Coverage
