@@ -5,10 +5,10 @@ milestone_name: mTLS & Packaging Hardening
 current_phase: 12
 current_phase_name: Tool Surface Robustness Coverage
 status: executing
-stopped_at: Completed 12-01-PLAN.md (HINT-01 hint coverage + PARSE-01 timestamp parse)
-last_updated: "2026-07-08T18:49:34.377Z"
+stopped_at: Completed 12-02-PLAN.md (COV-01 consumer_group_lag + COV-02 correlate_messages face coverage)
+last_updated: "2026-07-08T18:50:09.786Z"
 last_activity: 2026-07-09
-last_activity_desc: Completed 12-01-PLAN.md (HINT-01 + PARSE-01 test-only hardening)
+last_activity_desc: Completed 12-02-PLAN.md (COV-01 + COV-02 test-only face coverage)
 progress:
   total_phases: 6
   completed_phases: 2
@@ -31,10 +31,10 @@ FastAPI.
 
 ## Current Position
 
-Phase: 12 (Tool Surface Robustness Coverage) — plan 12-01 complete
-Plan: 12-01 complete (HINT-01 tool-surface hint coverage, PARSE-01 _parse_iso_utc coverage)
-Status: 12-01 executed and summarized; 12-02 (COV-01/COV-02) remaining
-Last activity: 2026-07-09 — Completed 12-01-PLAN.md (HINT-01 + PARSE-01 test-only hardening)
+Phase: 12 (Tool Surface Robustness Coverage) — plans 12-01 and 12-02 complete
+Plan: 12-02 complete (COV-01 consumer_group_lag + COV-02 correlate_messages face coverage)
+Status: all Phase 12 plans executed and summarized; ready for milestone audit
+Last activity: 2026-07-09 — Completed 12-02-PLAN.md (COV-01 + COV-02 test-only face coverage)
 
 ## Performance Metrics
 
@@ -77,6 +77,7 @@ Last activity: 2026-07-09 — Completed 12-01-PLAN.md (HINT-01 + PARSE-01 test-o
 - [Phase 11]: Made test_adapters.py config tests hermetic (_env_file=None + ambient KAFKA_MCP_* clearing) so a developer .env cannot leak real ssl.* cert paths (11-01)
 - [Phase 12]: HINT-01 — derive tool set from list_tools() (not hardcoded) so new tools can't skip the readOnly/idempotent/openWorld hint check; pin both _READ_ONLY constants (mcp_stdio + rest_api) (12-01)
 - [Phase 12]: PARSE-01 — lock _parse_iso_utc actionable param-named ValueError + trailing-Z/naive→UTC handling as test-only regression coverage (12-01)
+- [Phase ?]: COV-01/COV-02 face coverage: dedicated CorrelateFakeClient captures initial_results to prove base64 raw + timestamp round-trip; MockKafkaClient lacks correlate_messages
 
 ### Pending Todos
 
