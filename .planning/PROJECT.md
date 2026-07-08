@@ -38,28 +38,27 @@ native/     Rust pyo3 — СКАН ПАРТИЦИЙ (реальный CPU-hotspo
 
 Anti: produce, consumer-group mgmt, exactly-once, broker config.
 
-## Current Milestone: v1.2 Cross-Topic Investigation
+## Current Milestone: v1.3 mTLS & Packaging Hardening
 
-**Goal:** Enable investigators to trace entities across multiple Kafka topics
-by searching a key across topics simultaneously, filtering by message headers,
-extracting correlated IDs from message payloads/headers, and following those
-IDs into other topics to build cross-service event chains.
+**Goal:** Harden the brick's secure transport (client-certificate mTLS), input
+robustness, and PyPI packaging/release — verifying end-to-end and documenting
+the changes shipped during development, plus adding the genuinely new work
+(real-broker mTLS integration test, mTLS docs, lag/correlate coverage).
 
 **Target features:**
-- **Multi-topic search** — `search_messages` with `topics: list[str]` searches
-  across multiple topics in a single call, returning results merged and sorted
-  by timestamp.
-- **Header filtering** — `search_messages` gains `headers: dict[str, str]`
-  filter to match messages by header key-value pairs (trace_id, correlation_id).
-- **Correlation extraction** — New capability to extract correlated entity IDs
-  from search results (scan message values/headers for known ID fields).
-- **Correlation follow** — New `correlate_messages` tool that takes initial
-  search results, extracts linked IDs, and follows them into additional topics
-  to build a cross-service event chain.
+- **mTLS client certificates** — `KAFKA_MCP_SSL_*` cert/key/ca/key-password
+  wired into consumer + admin config; verified end-to-end against a real SSL
+  broker; documented in README.
+- **Tool-annotation hardening** — `idempotentHint`/`openWorldHint` on all
+  read-only tools across stdio MCP, HTTP MCP, and REST, asserted by a test.
+- **Input robustness** — actionable ISO-8601 timestamp errors in
+  `search_messages` (`_parse_iso_utc`).
+- **Packaging & release** — distribution `kafka-events-mcp`, OIDC Trusted
+  Publishing (no stored tokens), 0.2.0; publish path verified.
+- **Coverage** — tests for `consumer_group_lag` and `correlate_messages`.
 
-**Constraints:** Stays structurally read-only (no produce, no offset commits to
-prod groups). New tools honor the 4-face symmetry and the Investigator-Contract
-Evidence shape. Phase numbering continues from v1.1 (next is Phase 8).
+**Constraints:** Hardening only — stays structurally read-only, tool surface
+frozen. Phase numbering continues from v1.2 (next is Phase 11).
 
 ## ⭐ Investigator Contract (lib-фасад)
 
@@ -163,4 +162,4 @@ This document evolves at phase transitions and milestone boundaries.
 ---
 *Brick brief — запускай агента здесь и реализуй методы из Investigator Contract.*
 
-*Last updated: 2026-06-16 — milestone v1.2 started*
+*Last updated: 2026-07-08 — milestone v1.3 started*

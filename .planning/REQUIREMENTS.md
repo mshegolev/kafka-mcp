@@ -1,106 +1,84 @@
-# Requirements: kafka-mcp — Milestone v1.2
+# Requirements: kafka-mcp — Milestone v1.3
 
-**Defined:** 2026-06-16
+**Defined:** 2026-07-08
+**Milestone:** v1.3 — mTLS & Packaging Hardening
 **Core Value:** Read-only Kafka MCP brick — find events by key in a time window,
-decode Avro/Protobuf/JSON via Schema Registry, surface evidence for incident
-timelines. Library-first: works in pytest without MCP or FastAPI.
+correlate across topics, exposed identically through MCP / REST / CLI / library
+faces. v1.3 hardens secure transport (mTLS), input robustness, and PyPI
+packaging/release, and locks the session's shipped changes behind tests + docs.
 
-> v1.0 (KAFKA-01..07) shipped 2026-06-08. v1.1 (KEY-01..03, HTTP-01, LAG-01..03,
-> E2E-01..03, REL-01..02) shipped 2026-06-16. v1.2 extends the investigation
-> workflow from single-topic search to cross-topic entity tracing.
+**Scope note:** Several capabilities landed as code during development; v1.3
+verifies them end-to-end and documents them, and adds the genuinely new work
+(real-broker mTLS integration test, mTLS docs, lag/correlate coverage).
 
-## v1.2 Requirements
+## v1.3 Requirements
 
-Requirements for the v1.2 release. Each maps to exactly one roadmap phase.
+### mTLS client certificates (MTLS)
 
-### Multi-topic search (MTS)
+- [ ] **MTLS-01**: Operator can configure client-certificate mTLS via
+  `KAFKA_MCP_SSL_CERTIFICATE_LOCATION` / `SSL_KEY_LOCATION` / `SSL_CA_LOCATION` /
+  `SSL_KEY_PASSWORD`, wired into BOTH the consumer and the admin librdkafka config.
+- [ ] **MTLS-02**: mTLS connectivity is verified end-to-end against a real SSL
+  broker — an integration test lists topics / describes a topic over mTLS.
+- [ ] **MTLS-03**: mTLS setup is documented in README (env vars, cert paths,
+  `SECURITY_PROTOCOL=SSL`, key-password handling).
 
-- [x] **MTS-01**: `search_messages` accepts `topics: list[str]` (in addition to
-  the existing single-topic path) and returns results merged and sorted by
-  `timestamp_utc` across all specified topics in a single call.
-- [x] **MTS-02**: Multi-topic search preserves all existing single-topic behavior
-  (key filter, `time_from`/`time_to`, `limit`, Avro/Protobuf/JSON decode) with
-  no regressions — existing callers passing a single topic see identical results.
+### Tool annotations (HINT)
 
-### Header filtering (HDR)
+- [ ] **HINT-01**: All read-only tools advertise `idempotentHint=true` and
+  `openWorldHint=true` (in addition to `readOnlyHint`) across the stdio MCP,
+  HTTP MCP, and REST faces, with a test asserting the annotations.
 
-- [x] **HDR-01**: `search_messages` accepts an optional `headers: dict[str, str]`
-  parameter to filter messages whose Kafka headers contain all specified
-  key-value pairs (e.g. `headers={"trace_id": "abc-123"}`).
-- [x] **HDR-02**: Header filtering combines with the existing key + time window +
-  topics filters using AND semantics — a message must match all active filters
-  to appear in results.
+### Input robustness (PARSE)
 
-### Correlation (COR)
+- [ ] **PARSE-01**: `search_messages` rejects invalid ISO-8601 timestamps with an
+  actionable error naming the parameter and accepted format (trailing `Z`
+  accepted), instead of leaking the raw `fromisoformat` error.
 
-- [x] **COR-01**: A new `correlate_messages` capability accepts initial search
-  results (or a starting key + topics) and extracts correlated entity IDs by
-  scanning message values and headers for configurable ID field patterns
-  (e.g. `trace_id`, `order_id`, `parent_id`).
-- [x] **COR-02**: `correlate_messages` follows extracted IDs into additional
-  topics (specified or auto-discovered from the data) to build a cross-service
-  event chain, returning all correlated messages merged and sorted by timestamp.
-- [x] **COR-03**: Correlation output carries Investigator-Contract Evidence fields
-  (`source="kafka"`, `event_type="correlated_message"`, `timestamp_utc`, keys)
-  and includes a `correlation_chain` field linking each message to the ID path
-  that discovered it, so each result is usable as a timeline data point.
+### Packaging & release (PKG)
 
-### 4-face symmetry (SYM)
+- [ ] **PKG-01**: The distribution is packaged and installable as
+  `kafka-events-mcp` — pyproject name, README install line, and CHANGELOG agree,
+  and `hatch build` produces `kafka_events_mcp-*` artifacts.
+- [ ] **PKG-02**: Releases publish to PyPI via OIDC Trusted Publishing with no
+  stored API tokens; the TestPyPI + PyPI jobs and publish path are verified.
 
-- [x] **SYM-01**: All new and extended capabilities (multi-topic search, header
-  filter, `correlate_messages`) are exposed identically across lib `KafkaClient`,
-  MCP stdio tool, FastAPI `/tools/*` POST endpoint, and `kafka-mcp` CLI
-  subcommand — all return the same schema.
+### Test coverage (COV)
+
+- [ ] **COV-01**: `consumer_group_lag` has automated coverage across the faces it
+  is exposed on.
+- [ ] **COV-02**: `correlate_messages` has automated coverage across the faces it
+  is exposed on.
 
 ## Future Requirements
 
-Deferred to a later milestone. Tracked but not in this roadmap.
+Deferred beyond v1.3:
 
-### Correlation — advanced
-
-- **COR-04**: Recursive correlation depth control — limit how many hops
-  `correlate_messages` follows to prevent unbounded fan-out.
-- **COR-05**: Correlation caching — cache extracted ID mappings to speed
-  repeated correlation queries for the same entity.
-
-### Decode / Transport (carried from v1.1)
-
-- **KEY-03**: Cache Schema Registry schema lookups to cut per-message registry
-  round-trips on large scans.
-- **HTTP-02**: Auth/TLS hardening for the HTTP transport (token, mTLS).
+- SASL mechanisms end-to-end verification (PLAIN / SCRAM) against a live broker.
+- Schema Registry mTLS / basic-auth end-to-end verification.
+- Published-package smoke test (install `kafka-events-mcp` from PyPI in a clean env).
 
 ## Out of Scope
 
-Explicitly excluded for v1.2. Documented to prevent scope creep.
-
-| Feature | Reason |
-|---------|--------|
-| Timeline visualization / rendering | v1.2 provides the data; rendering is a UI concern outside the brick |
-| Produce / write paths | Violates the read-only guarantee |
-| Consumer-group management | Write operations; out of the read-only contract |
-| Rust native scanner | Gated on a future CPU-bound benchmark (KAFKA-07, I/O-bound) |
-| Auto-discovery of all topics for correlation | Risk of unbounded fan-out; v1.2 requires explicit topic lists |
-| Recursive multi-hop correlation (>1 hop depth) | Deferred to COR-04; v1.2 supports single-hop follow from initial results |
+- New read/write Kafka capabilities — v1.3 is hardening only; the brick stays
+  read-only and its tool surface is frozen for this milestone.
+- Rust/pyo3 native scanner — deferred per v1.0 KAFKA-07 benchmark decision.
+- Multi-broker / cluster-management features — outside the investigator remit.
 
 ## Traceability
 
-Which phases cover which requirements. Updated during roadmap creation.
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MTS-01 | Phase 8: Multi-Topic Search & Header Filtering | ✅ Completed |
-| MTS-02 | Phase 8: Multi-Topic Search & Header Filtering | ✅ Completed |
-| HDR-01 | Phase 8: Multi-Topic Search & Header Filtering | ✅ Completed |
-| HDR-02 | Phase 8: Multi-Topic Search & Header Filtering | ✅ Completed |
-| COR-01 | Phase 9: Correlation Engine | ✅ Completed |
-| COR-02 | Phase 9: Correlation Engine | ✅ Completed |
-| COR-03 | Phase 9: Correlation Engine | ✅ Completed |
-| SYM-01 | Phase 10: 4-Face Symmetry & Integration Tests | ✅ Completed |
+| MTLS-01 | — | pending |
+| MTLS-02 | — | pending |
+| MTLS-03 | — | pending |
+| HINT-01 | — | pending |
+| PARSE-01 | — | pending |
+| PKG-01 | — | pending |
+| PKG-02 | — | pending |
+| COV-01 | — | pending |
+| COV-02 | — | pending |
 
-**Coverage:**
-- v1.2 requirements: 8 total
-- Mapped to phases: 8/8 ✓
-- Unmapped: 0
+**Coverage:** 0/9 mapped (roadmap fills phase assignments).
 
----
-*Requirements defined: 2026-06-16 | Traceability updated: 2026-06-16*
+*Requirements defined: 2026-07-08 | Traceability updated by roadmap.*
