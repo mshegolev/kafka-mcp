@@ -575,8 +575,13 @@ class TestConfluentConsumerAdapterConfig:
             f"sasl.* keys must be omitted for mTLS config: {captured_conf}"
         )
 
-    def test_ssl_cert_keys_omitted_when_fields_unset(self) -> None:
-        """Backward-compat: no ssl.* cert keys when SSL fields are unset (T-NRG-02)."""
+    def test_ssl_cert_keys_omitted_when_fields_unset(self, monkeypatch) -> None:
+        """Backward-compat: no ssl.* cert keys when SSL fields are unset (T-NRG-02).
+
+        Uses ``_env_file=None`` + ambient-env clearing so a developer ``.env``
+        with real SSL cert paths cannot leak ssl.* keys into this PLAINTEXT
+        baseline (the settings object must genuinely be "unset" here).
+        """
         from kafka_mcp.adapters.outbound.confluent_consumer import (
             ConfluentConsumerAdapter,
         )
@@ -588,7 +593,8 @@ class TestConfluentConsumerAdapterConfig:
             captured_conf.update(conf)
             return MagicMock()
 
-        settings = KafkaMcpSettings(bootstrap_servers="localhost:9092")
+        self._clear_ambient_ssl_env(monkeypatch)
+        settings = KafkaMcpSettings(bootstrap_servers="localhost:9092", _env_file=None)
         with (
             patch(
                 "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
@@ -608,6 +614,139 @@ class TestConfluentConsumerAdapterConfig:
             "ssl.key.password",
         ):
             assert key not in captured_conf, f"{key} must be omitted when unset"
+
+    # ------------------------------------------------------------------
+    # MTLS-01: assert ssl.* wiring on BOTH the consumer AND the admin conf.
+    #
+    # The three tests above (test_ssl_cert_keys_added_when_fields_set,
+    # test_ssl_cert_keys_omitted_when_fields_unset, test_ssl_only_omits_sasl_keys)
+    # capture ONLY the Consumer conf — they patch AdminClient with a bare
+    # return_value=MagicMock(), so the ssl.* wiring on the AdminClient conf is
+    # unasserted. The parametrized tests below patch BOTH Consumer and AdminClient
+    # with conf-capturing side_effects and run each assertion body against the
+    # "consumer" and "admin" conf builders, closing MTLS-01's "wired into BOTH the
+    # consumer and the admin" clause and its "emitted only when set / no
+    # PLAINTEXT-SASL regression" clause. src/ is NOT modified — the wiring already
+    # exists; these tests only assert it.
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _clear_ambient_ssl_env(monkeypatch) -> None:
+        """Strip any ambient KAFKA_MCP_* SSL/security env so an "unset" settings
+        baseline is hermetic.
+
+        KafkaMcpSettings auto-loads a project ``.env`` (env_file=".env" in its
+        model_config) and OS env vars under the ``KAFKA_MCP_`` prefix. On a
+        developer machine the local ``.env`` may point the SSL cert/key/CA at
+        real paths, which would leak ssl.* keys into a settings object we intend
+        to be a plain PLAINTEXT baseline — falsely failing the "omitted when
+        unset" assertions. Callers combine this with ``_env_file=None`` so
+        neither the file nor the OS environment contaminates the baseline.
+        """
+        for var in (
+            "KAFKA_MCP_SECURITY_PROTOCOL",
+            "KAFKA_MCP_SSL_CERTIFICATE_LOCATION",
+            "KAFKA_MCP_SSL_KEY_LOCATION",
+            "KAFKA_MCP_SSL_CA_LOCATION",
+            "KAFKA_MCP_SSL_KEY_PASSWORD",
+        ):
+            monkeypatch.delenv(var, raising=False)
+
+    @staticmethod
+    def _capture_confs(settings) -> dict[str, dict]:
+        """Instantiate the adapter, capturing both the consumer and admin confs.
+
+        Returns ``{"consumer": <conf>, "admin": <conf>}`` — the two librdkafka
+        conf dicts the adapter builds in ``__init__``. Both AdminClient and
+        Consumer are patched with a side_effect that records the conf argument,
+        mirroring the existing ``fake_consumer(conf)`` capture idiom.
+        """
+        from kafka_mcp.adapters.outbound.confluent_consumer import (
+            ConfluentConsumerAdapter,
+        )
+
+        captured_consumer_conf: dict = {}
+        captured_admin_conf: dict = {}
+
+        def fake_consumer(conf: dict) -> MagicMock:
+            captured_consumer_conf.update(conf)
+            return MagicMock()
+
+        def fake_admin(conf: dict) -> MagicMock:
+            captured_admin_conf.update(conf)
+            return MagicMock()
+
+        with (
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
+                side_effect=fake_consumer,
+            ),
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.AdminClient",
+                side_effect=fake_admin,
+            ),
+        ):
+            ConfluentConsumerAdapter(settings)
+
+        return {"consumer": captured_consumer_conf, "admin": captured_admin_conf}
+
+    @pytest.mark.parametrize("conf_builder", ["consumer", "admin"])
+    def test_mtls_ssl_keys_added_on_both_confs_when_fields_set(
+        self, conf_builder: str
+    ) -> None:
+        """mTLS: ssl.* keys land on the consumer AND admin conf (MTLS-01).
+
+        The AdminClient path is the previously-unasserted gap — the existing
+        ``test_ssl_cert_keys_added_when_fields_set`` proves only the Consumer conf.
+        """
+        from kafka_mcp.config import KafkaMcpSettings
+
+        settings = KafkaMcpSettings(
+            bootstrap_servers="localhost:9092",
+            security_protocol="SSL",
+            ssl_certificate_location="/c.pem",
+            ssl_key_location="/k.pem",
+            ssl_ca_location="/ca.pem",
+            ssl_key_password="pw",
+        )
+        conf = self._capture_confs(settings)[conf_builder]
+
+        assert conf.get("security.protocol") == "SSL"
+        assert conf.get("ssl.certificate.location") == "/c.pem"
+        assert conf.get("ssl.key.location") == "/k.pem"
+        assert conf.get("ssl.ca.location") == "/ca.pem"
+        # key password is unwrapped to plaintext (SecretStr.get_secret_value())
+        assert conf.get("ssl.key.password") == "pw"
+        # SSL-only must never inject sasl.* keys (no SASL regression).
+        assert not any(k.startswith("sasl.") for k in conf), (
+            f"sasl.* keys must be omitted from the {conf_builder} conf under "
+            f"mTLS: {conf}"
+        )
+
+    @pytest.mark.parametrize("conf_builder", ["consumer", "admin"])
+    def test_mtls_ssl_keys_omitted_on_both_confs_when_unset(
+        self, conf_builder: str, monkeypatch
+    ) -> None:
+        """No ssl.* keys on the consumer OR admin conf when SSL fields unset.
+
+        Proves the PLAINTEXT path stays byte-for-byte free of ssl.* wiring on
+        both conf builders (T-NRG-02 / no PLAINTEXT regression, MTLS-01).
+        """
+        from kafka_mcp.config import KafkaMcpSettings
+
+        self._clear_ambient_ssl_env(monkeypatch)
+        settings = KafkaMcpSettings(bootstrap_servers="localhost:9092", _env_file=None)
+        conf = self._capture_confs(settings)[conf_builder]
+
+        for key in (
+            "ssl.certificate.location",
+            "ssl.key.location",
+            "ssl.ca.location",
+            "ssl.key.password",
+        ):
+            assert key not in conf, (
+                f"{key} must be omitted from the {conf_builder} conf when unset"
+            )
 
     def test_sasl_keys_added_only_when_mechanism_set(self) -> None:
         """SASL keys are configured only when a mechanism is requested."""
@@ -661,7 +800,9 @@ class TestConfluentConsumerAdapterConfig:
             },
         ],
     )
-    def test_real_librdkafka_accepts_built_conf(self, kwargs: dict) -> None:
+    def test_real_librdkafka_accepts_built_conf(
+        self, kwargs: dict, monkeypatch
+    ) -> None:
         """Construct a REAL confluent_kafka.Consumer with the built conf.
 
         Non-mocked regression test for CR-01: librdkafka validates the conf
@@ -672,6 +813,12 @@ class TestConfluentConsumerAdapterConfig:
         (``SASL_SSL`` with NO mechanism is intentionally not tested: SASL
         inherently requires a mechanism and librdkafka rejects that config
         on its own merits, independent of this adapter.)
+
+        Hermetic: ``_env_file=None`` + ambient-env clearing keeps a developer
+        ``.env`` (which may point ssl.ca.location at real, machine-local cert
+        paths) from being injected into the REAL Consumer — librdkafka would
+        otherwise fail to ``fopen`` the missing CA file and this protocol-variant
+        regression guard would fail for reasons unrelated to CR-01.
         """
         from confluent_kafka import KafkaException
 
@@ -680,7 +827,10 @@ class TestConfluentConsumerAdapterConfig:
         )
         from kafka_mcp.config import KafkaMcpSettings
 
-        settings = KafkaMcpSettings(bootstrap_servers="localhost:9092", **kwargs)
+        self._clear_ambient_ssl_env(monkeypatch)
+        settings = KafkaMcpSettings(
+            bootstrap_servers="localhost:9092", _env_file=None, **kwargs
+        )
 
         try:
             # No mock: this exercises librdkafka's real config validation.
