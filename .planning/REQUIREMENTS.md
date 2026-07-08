@@ -69,16 +69,17 @@ Deferred beyond v1.3:
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MTLS-01 | — | pending |
-| MTLS-02 | — | pending |
-| MTLS-03 | — | pending |
-| HINT-01 | — | pending |
-| PARSE-01 | — | pending |
-| PKG-01 | — | pending |
-| PKG-02 | — | pending |
-| COV-01 | — | pending |
-| COV-02 | — | pending |
+| MTLS-01 | Phase 11 | Pending |
+| MTLS-02 | Phase 11 | Pending |
+| MTLS-03 | Phase 11 | Pending |
+| HINT-01 | Phase 12 | Pending |
+| PARSE-01 | Phase 12 | Pending |
+| COV-01 | Phase 12 | Pending |
+| COV-02 | Phase 12 | Pending |
+| PKG-01 | Phase 13 | Pending |
+| PKG-02 | Phase 13 | Pending |
 
-**Coverage:** 0/9 mapped (roadmap fills phase assignments).
+**Coverage:** 9/9 mapped ✓
 
-*Requirements defined: 2026-07-08 | Traceability updated by roadmap.*
+*Requirements defined: 2026-07-08 | Traceability updated by roadmap 2026-07-08.*
+</content>

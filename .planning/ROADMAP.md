@@ -9,9 +9,13 @@
 - ✅ **v1.1 Production-Ready & Extended** — Phases 4–7 (shipped 2026-06-16) —
   key decode, schema_id surfacing, HTTP transport, consumer_group_lag tool,
   testcontainers E2E suite, CI release pipeline.
-- 🚧 **v1.2 Cross-Topic Investigation** — Phases 8–10 (in progress) —
+- ✅ **v1.2 Cross-Topic Investigation** — Phases 8–10 (shipped 2026-06-18) —
   multi-topic search, header filtering, correlation extraction & follow,
   4-face symmetry for all new capabilities.
+- 🚧 **v1.3 mTLS & Packaging Hardening** — Phases 11–13 (in progress) —
+  client-certificate mTLS wired + verified end-to-end + documented, tool-surface
+  robustness (annotations, timestamp errors, lag/correlate coverage), and
+  `kafka-events-mcp` packaging via OIDC Trusted Publishing.
 
 ## Phases
 
@@ -34,17 +38,29 @@
 
 </details>
 
-### ✅ v1.2 Cross-Topic Investigation (Completed 2026-06-18)
+<details>
+<summary>✅ v1.2 Cross-Topic Investigation (Phases 8–10) — SHIPPED 2026-06-18</summary>
 
-**Milestone Goal:** Enable investigators to trace entities across multiple Kafka
-topics — searching a key across topics simultaneously, filtering by message
-headers, extracting correlated IDs from payloads/headers, and following those IDs
-into other topics to build cross-service event chains. All new capabilities
-honor the 4-face symmetry and the Investigator-Contract Evidence shape.
+- [x] Phase 8: Multi-Topic Search & Header Filtering (1/1 plans) — completed 2026-06-18
+- [x] Phase 9: Correlation Engine (1/1 plans) — completed 2026-06-18
+- [x] Phase 10: 4-Face Symmetry & Integration Tests (1/1 plans) — completed 2026-06-18
 
-- [x] **Phase 8: Multi-Topic Search & Header Filtering** — Extend `search_messages` to accept multiple topics and header key-value filters at the domain/lib layer
-- [x] **Phase 9: Correlation Engine** — New `correlate_messages` capability that extracts correlated IDs from search results and follows them into additional topics
-- [x] **Phase 10: 4-Face Symmetry & Integration Tests** — Wire all v1.2 capabilities across MCP/FastAPI/CLI faces; update integration test suite for cross-topic scenarios
+</details>
+
+### 🚧 v1.3 mTLS & Packaging Hardening (Phases 11–13)
+
+**Milestone Goal:** Harden the brick's secure transport, input robustness, and
+PyPI packaging/release. Much of the code already landed during development
+(mTLS wiring in the consumer/admin config, `idempotentHint`/`openWorldHint`
+annotations, `_parse_iso_utc`, the `kafka-events-mcp` rename, the OIDC release
+workflow). v1.3 verifies these end-to-end, locks them behind tests, documents
+them, and adds the genuinely new work: a real-broker mTLS integration test,
+mTLS README docs, and `consumer_group_lag` / `correlate_messages` coverage. The
+brick stays structurally read-only and its tool surface is frozen.
+
+- [ ] **Phase 11: mTLS Transport Hardening** — Verify client-certificate mTLS is wired into both consumer and admin config, prove it end-to-end against a real SSL broker, and document setup in README
+- [ ] **Phase 12: Tool-Surface Robustness & Coverage** — Assert `idempotentHint`/`openWorldHint` annotations across all faces, harden `search_messages` timestamp errors, and add coverage for `consumer_group_lag` and `correlate_messages`
+- [ ] **Phase 13: Packaging & OIDC Release** — Lock the `kafka-events-mcp` distribution identity end-to-end and verify the OIDC Trusted Publishing release path with no stored tokens
 
 ## Phase Details
 
@@ -86,6 +102,43 @@ honor the 4-face symmetry and the Investigator-Contract Evidence shape.
 **Plans**: TBD
 **UI hint**: no
 
+### Phase 11: mTLS Transport Hardening
+**Goal**: An operator can secure the brick's Kafka connection with client-certificate mTLS using `KAFKA_MCP_SSL_*` env vars — wired into both the consumer and the admin path, proven to work against a real SSL broker, and documented well enough to configure from README alone
+**Depends on**: Phase 10 (v1.2 foundation)
+**Requirements**: MTLS-01, MTLS-02, MTLS-03
+**Success Criteria** (what must be TRUE):
+  1. Setting `KAFKA_MCP_SECURITY_PROTOCOL=SSL` plus `KAFKA_MCP_SSL_CERTIFICATE_LOCATION` / `SSL_KEY_LOCATION` / `SSL_CA_LOCATION` / `SSL_KEY_PASSWORD` produces a librdkafka config carrying `ssl.certificate.location`, `ssl.key.location`, `ssl.ca.location`, and `ssl.key.password` on BOTH the consumer and the AdminClient config builders — verifiable via `pytest tests/ -k "ssl or mtls"` asserting the rendered config dicts for both paths
+  2. Absent SSL env vars, the config builders emit no `ssl.*` keys and existing PLAINTEXT/SASL behavior is unchanged — verifiable via `pytest tests/ -k "config" --tb=short` showing zero regressions on the existing config suite
+  3. An integration test brings up a real SSL-enabled broker (testcontainers) with a server cert + client cert, connects the brick over mTLS, and successfully performs a read-only operation (`list_topics` and/or `describe_topic`) — verifiable via `pytest -m integration -k "mtls or ssl" -v` going green against the SSL broker
+  4. README documents mTLS setup end-to-end: the `KAFKA_MCP_SSL_*` env var names, expected cert/key/CA file paths, `SECURITY_PROTOCOL=SSL`, and key-password handling — verifiable by a human following README to configure mTLS with no reference to source code
+**Plans**: TBD
+**UI hint**: no
+
+### Phase 12: Tool-Surface Robustness & Coverage
+**Goal**: The frozen read-only tool surface is provably correct and well-covered — every tool advertises the right hints across all faces, `search_messages` gives actionable errors for bad timestamps, and the two previously-uncovered tools (`consumer_group_lag`, `correlate_messages`) have automated tests across the faces they expose
+**Depends on**: Phase 11
+**Requirements**: HINT-01, PARSE-01, COV-01, COV-02
+**Success Criteria** (what must be TRUE):
+  1. Every read-only tool advertises `idempotentHint=true` and `openWorldHint=true` (alongside `readOnlyHint=true`) on the stdio MCP, HTTP MCP, and REST faces — verifiable via `pytest tests/ -k "annotation or hint"` asserting the annotations on each tool across all three faces
+  2. `search_messages` called with an invalid `time_from`/`time_to` value rejects it with an actionable error that names the offending parameter and states the accepted ISO-8601 format (trailing `Z` accepted), instead of leaking the raw `fromisoformat` exception — verifiable via `pytest tests/ -k "parse_iso or timestamp"` asserting the error message content
+  3. `consumer_group_lag` has automated coverage exercising it across each face it is exposed on (lib + MCP + REST + CLI as applicable) — verifiable via `pytest tests/ -k "consumer_group_lag or lag" -v`
+  4. `correlate_messages` has automated coverage exercising it across each face it is exposed on — verifiable via `pytest tests/ -k "correlate" -v`
+  5. The full suite stays green with the added tests and no regressions — verifiable via `pytest tests/ --tb=short`
+**Plans**: TBD
+**UI hint**: no
+
+### Phase 13: Packaging & OIDC Release
+**Goal**: The distribution ships cleanly as `kafka-events-mcp` with a consistent identity across all metadata, and releases publish to PyPI via OIDC Trusted Publishing with no stored API tokens — with the publish path verified end-to-end short of a live production push
+**Depends on**: Phase 12
+**Requirements**: PKG-01, PKG-02
+**Success Criteria** (what must be TRUE):
+  1. The distribution name `kafka-events-mcp` is consistent across `pyproject.toml` (`name`), the README install line, and CHANGELOG — verifiable by inspection plus `pytest`/CI check asserting the three agree
+  2. `hatch build` (or the configured build backend) produces `kafka_events_mcp-*` sdist and wheel artifacts at version 0.2.0 — verifiable by running the build and observing the artifact filenames
+  3. The release workflow publishes via PyPI OIDC Trusted Publishing (`id-token: write`, no `password`/`PYPI_API_TOKEN` secret referenced) — verifiable by inspecting `.github/workflows/release.yml` and confirming no stored token is used
+  4. The TestPyPI dry-run job and the PyPI publish job are wired and the publish path is exercised end-to-end up to the live-production gate (human-gated per the "prepare-don't-live-publish" posture) — verifiable via a successful TestPyPI publish run or workflow dry-run evidence
+**Plans**: TBD
+**UI hint**: no
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -100,3 +153,8 @@ honor the 4-face symmetry and the Investigator-Contract Evidence shape.
 | 8. Multi-Topic Search & Header Filtering | v1.2 | 1/1 | Complete | 2026-06-18 |
 | 9. Correlation Engine | v1.2 | 1/1 | Complete | 2026-06-18 |
 | 10. 4-Face Symmetry & Integration Tests | v1.2 | 1/1 | Complete | 2026-06-18 |
+| 11. mTLS Transport Hardening | v1.3 | 0/? | Not started | - |
+| 12. Tool-Surface Robustness & Coverage | v1.3 | 0/? | Not started | - |
+| 13. Packaging & OIDC Release | v1.3 | 0/? | Not started | - |
+</content>
+</invoke>
