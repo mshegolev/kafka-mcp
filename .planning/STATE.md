@@ -2,14 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: mTLS & Packaging Hardening
+current_phase: 11
+current_phase_name: mTLS Transport Hardening
 status: planning
-last_updated: "2026-07-08T06:13:16.933Z"
-last_activity: 2026-07-08
+stopped_at: v1.3 roadmap created — 3 phases (11–13), 9 requirements mapped
+last_updated: "2026-07-08T17:41:40.960Z"
+last_activity: 2026-07-09
+last_activity_desc: Completed 11-02-PLAN.md (env-gated mTLS e2e test)
 progress:
-  total_phases: 3
+  total_phases: 6
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 2
+  completed_plans: 1
   percent: 0
 ---
 
@@ -27,10 +31,10 @@ FastAPI.
 
 ## Current Position
 
-Phase: 11 (mTLS Transport Hardening) — not started
-Plan: —
-Status: Roadmap created; ready for plan-phase
-Last activity: 2026-07-08 — v1.3 roadmap created (Phases 11–13)
+Phase: 11 (mTLS Transport Hardening) — in progress
+Plan: 11-02 complete (MTLS-02 e2e test)
+Status: Plan 11-02 executed; plan 11-01 still to be summarized/verified
+Last activity: 2026-07-09 — Completed 11-02-PLAN.md (env-gated mTLS e2e test)
 
 ## Performance Metrics
 
@@ -49,6 +53,7 @@ Last activity: 2026-07-08 — v1.3 roadmap created (Phases 11–13)
 | 03 | 3 | - | - |
 
 *Updated after each plan completion*
+| Phase 11 P02 | 12min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -64,6 +69,7 @@ Last activity: 2026-07-08 — v1.3 roadmap created (Phases 11–13)
 - [v1.2] Phase 8 extends search_messages (additive params); Phase 9 adds correlate_messages (new domain service); Phase 10 wires 4-face symmetry
 - [v1.3] Hardening milestone: much code already landed during development (mTLS wiring, hint annotations, _parse_iso_utc, kafka-events-mcp rename, OIDC release workflow) — phases verify end-to-end + add tests/docs, not greenfield
 - [v1.3] Tool surface frozen and brick stays read-only for the milestone
+- [Phase ?]: MTLS-02: env-gated real-broker mTLS e2e test (skipif on broker+cert+key+CA env) — reuses staging contour via env, no cert material committed (11-02)
 
 ### Pending Todos
 
@@ -75,7 +81,7 @@ None. v1.3 roadmap created; 3 phases (11–13), 9 requirements mapped. Ready for
 
 ## Session Continuity
 
-Last session: 2026-07-08
+Last session: 2026-07-08T17:35:29.122Z
 Stopped at: v1.3 roadmap created — 3 phases (11–13), 9 requirements mapped
 Resume file: None
 Next action: `/gsd-plan-phase 11`

@@ -18,8 +18,10 @@ verifies them end-to-end and documents them, and adds the genuinely new work
 - [ ] **MTLS-01**: Operator can configure client-certificate mTLS via
   `KAFKA_MCP_SSL_CERTIFICATE_LOCATION` / `SSL_KEY_LOCATION` / `SSL_CA_LOCATION` /
   `SSL_KEY_PASSWORD`, wired into BOTH the consumer and the admin librdkafka config.
-- [ ] **MTLS-02**: mTLS connectivity is verified end-to-end against a real SSL
+
+- [x] **MTLS-02**: mTLS connectivity is verified end-to-end against a real SSL
   broker — an integration test lists topics / describes a topic over mTLS.
+
 - [ ] **MTLS-03**: mTLS setup is documented in README (env vars, cert paths,
   `SECURITY_PROTOCOL=SSL`, key-password handling).
 
@@ -40,6 +42,7 @@ verifies them end-to-end and documents them, and adds the genuinely new work
 - [ ] **PKG-01**: The distribution is packaged and installable as
   `kafka-events-mcp` — pyproject name, README install line, and CHANGELOG agree,
   and `hatch build` produces `kafka_events_mcp-*` artifacts.
+
 - [ ] **PKG-02**: Releases publish to PyPI via OIDC Trusted Publishing with no
   stored API tokens; the TestPyPI + PyPI jobs and publish path are verified.
 
@@ -47,6 +50,7 @@ verifies them end-to-end and documents them, and adds the genuinely new work
 
 - [ ] **COV-01**: `consumer_group_lag` has automated coverage across the faces it
   is exposed on.
+
 - [ ] **COV-02**: `correlate_messages` has automated coverage across the faces it
   is exposed on.
 
@@ -62,6 +66,7 @@ Deferred beyond v1.3:
 
 - New read/write Kafka capabilities — v1.3 is hardening only; the brick stays
   read-only and its tool surface is frozen for this milestone.
+
 - Rust/pyo3 native scanner — deferred per v1.0 KAFKA-07 benchmark decision.
 - Multi-broker / cluster-management features — outside the investigator remit.
 
@@ -70,7 +75,7 @@ Deferred beyond v1.3:
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | MTLS-01 | Phase 11 | Pending |
-| MTLS-02 | Phase 11 | Pending |
+| MTLS-02 | Phase 11 | Complete |
 | MTLS-03 | Phase 11 | Pending |
 | HINT-01 | Phase 12 | Pending |
 | PARSE-01 | Phase 12 | Pending |
