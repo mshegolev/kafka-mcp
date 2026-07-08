@@ -62,7 +62,7 @@ mTLS README docs, and `consumer_group_lag` / `correlate_messages` coverage. The
 brick stays structurally read-only and its tool surface is frozen.
 
 - [x] **Phase 11: mTLS Transport Hardening** — Verify client-certificate mTLS is wired into both consumer and admin config, prove it end-to-end against a real SSL broker, and document setup in README (completed 2026-07-08)
-- [ ] **Phase 12: Tool-Surface Robustness & Coverage** — Assert `idempotentHint`/`openWorldHint` annotations across all faces, harden `search_messages` timestamp errors, and add coverage for `consumer_group_lag` and `correlate_messages`
+- [x] **Phase 12: Tool-Surface Robustness & Coverage** — Assert `idempotentHint`/`openWorldHint` annotations across all faces, harden `search_messages` timestamp errors, and add coverage for `consumer_group_lag` and `correlate_messages` (completed 2026-07-08)
 - [ ] **Phase 13: Packaging & OIDC Release** — Lock the `kafka-events-mcp` distribution identity end-to-end and verify the OIDC Trusted Publishing release path with no stored tokens
 
 ## Phase Details
@@ -146,9 +146,11 @@ brick stays structurally read-only and its tool surface is frozen.
   4. `correlate_messages` has automated coverage exercising it across each face it is exposed on — verifiable via `pytest tests/ -k "correlate" -v`
   5. The full suite stays green with the added tests and no regressions — verifiable via `pytest tests/ --tb=short`
 
-**Plans**: 2 plans
-- [ ] 12-01-PLAN.md — HINT-01 hint annotations across stdio/HTTP MCP/REST + PARSE-01 timestamp-parse coverage
-- [ ] 12-02-PLAN.md — COV-01 consumer_group_lag + COV-02 correlate_messages face coverage (base64 raw + timestamp round-trip)
+**Plans**: 2/2 plans complete
+
+- [x] 12-01-PLAN.md — HINT-01 hint annotations across stdio/HTTP MCP/REST + PARSE-01 timestamp-parse coverage
+- [x] 12-02-PLAN.md — COV-01 consumer_group_lag + COV-02 correlate_messages face coverage (base64 raw + timestamp round-trip)
+
 **UI hint**: no
 
 ### Phase 13: Packaging & OIDC Release
@@ -181,7 +183,7 @@ brick stays structurally read-only and its tool surface is frozen.
 | 9. Correlation Engine | v1.2 | 1/1 | Complete | 2026-06-18 |
 | 10. 4-Face Symmetry & Integration Tests | v1.2 | 1/1 | Complete | 2026-06-18 |
 | 11. mTLS Transport Hardening | v1.3 | 2/2 | Complete   | 2026-07-08 |
-| 12. Tool-Surface Robustness & Coverage | v1.3 | 0/? | Not started | - |
+| 12. Tool-Surface Robustness & Coverage | v1.3 | 2/2 | Complete   | 2026-07-08 |
 | 13. Packaging & OIDC Release | v1.3 | 0/? | Not started | - |
 </content>
 </invoke>

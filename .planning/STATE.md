@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: mTLS & Packaging Hardening
-current_phase: 11
-current_phase_name: mTLS Transport Hardening
-status: planning
-stopped_at: v1.3 roadmap created — 3 phases (11–13), 9 requirements mapped
-last_updated: "2026-07-08T17:50:52.290Z"
+current_phase: 12
+current_phase_name: Tool Surface Robustness Coverage
+status: executing
+stopped_at: Completed 12-01-PLAN.md (HINT-01 hint coverage + PARSE-01 timestamp parse)
+last_updated: "2026-07-08T18:49:34.377Z"
 last_activity: 2026-07-09
-last_activity_desc: Completed 11-01-PLAN.md (AdminClient mTLS assertions + README mTLS docs)
+last_activity_desc: Completed 12-01-PLAN.md (HINT-01 + PARSE-01 test-only hardening)
 progress:
   total_phases: 6
-  completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
-  percent: 17
+  completed_phases: 2
+  total_plans: 4
+  completed_plans: 4
+  percent: 33
 ---
 
 # Project State
@@ -31,10 +31,10 @@ FastAPI.
 
 ## Current Position
 
-Phase: 11 (mTLS Transport Hardening) — plans 11-01 and 11-02 complete
-Plan: 11-01 complete (MTLS-01 AdminClient assertions, MTLS-03 README mTLS docs)
-Status: Both phase-11 plans executed and summarized (MTLS-01/02/03 delivered)
-Last activity: 2026-07-09 — Completed 11-01-PLAN.md (AdminClient mTLS assertions + README docs)
+Phase: 12 (Tool Surface Robustness Coverage) — plan 12-01 complete
+Plan: 12-01 complete (HINT-01 tool-surface hint coverage, PARSE-01 _parse_iso_utc coverage)
+Status: 12-01 executed and summarized; 12-02 (COV-01/COV-02) remaining
+Last activity: 2026-07-09 — Completed 12-01-PLAN.md (HINT-01 + PARSE-01 test-only hardening)
 
 ## Performance Metrics
 
@@ -53,8 +53,10 @@ Last activity: 2026-07-09 — Completed 11-01-PLAN.md (AdminClient mTLS assertio
 | 03 | 3 | - | - |
 
 *Updated after each plan completion*
+| Phase 12 P01 | 6min | 2 tasks | 1 files |
 | Phase 11 P02 | 12min | 1 tasks | 1 files |
 | Phase 11 P01 | 28min | 2 tasks | 2 files |
+| Phase 12 P02 | 6min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -73,6 +75,8 @@ Last activity: 2026-07-09 — Completed 11-01-PLAN.md (AdminClient mTLS assertio
 - [Phase ?]: MTLS-02: env-gated real-broker mTLS e2e test (skipif on broker+cert+key+CA env) — reuses staging contour via env, no cert material committed (11-02)
 - [Phase 11]: MTLS-01: assert ssl.* on both consumer + admin conf via one parametrized test capturing both builders (11-01)
 - [Phase 11]: Made test_adapters.py config tests hermetic (_env_file=None + ambient KAFKA_MCP_* clearing) so a developer .env cannot leak real ssl.* cert paths (11-01)
+- [Phase 12]: HINT-01 — derive tool set from list_tools() (not hardcoded) so new tools can't skip the readOnly/idempotent/openWorld hint check; pin both _READ_ONLY constants (mcp_stdio + rest_api) (12-01)
+- [Phase 12]: PARSE-01 — lock _parse_iso_utc actionable param-named ValueError + trailing-Z/naive→UTC handling as test-only regression coverage (12-01)
 
 ### Pending Todos
 
@@ -84,8 +88,8 @@ None. v1.3 roadmap created; 3 phases (11–13), 9 requirements mapped. Ready for
 
 ## Session Continuity
 
-Last session: 2026-07-08T17:50:52.284Z
-Stopped at: v1.3 roadmap created — 3 phases (11–13), 9 requirements mapped
+Last session: 2026-07-08T18:47:47.287Z
+Stopped at: Completed 12-01-PLAN.md (HINT-01 + PARSE-01 test-only hardening)
 Resume file: None
-Next action: `/gsd-plan-phase 11`
+Next action: `/gsd-execute-phase 12` (plan 12-02: COV-01/COV-02)
 </content>

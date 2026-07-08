@@ -27,13 +27,13 @@ verifies them end-to-end and documents them, and adds the genuinely new work
 
 ### Tool annotations (HINT)
 
-- [ ] **HINT-01**: All read-only tools advertise `idempotentHint=true` and
+- [x] **HINT-01**: All read-only tools advertise `idempotentHint=true` and
   `openWorldHint=true` (in addition to `readOnlyHint`) across the stdio MCP,
   HTTP MCP, and REST faces, with a test asserting the annotations.
 
 ### Input robustness (PARSE)
 
-- [ ] **PARSE-01**: `search_messages` rejects invalid ISO-8601 timestamps with an
+- [x] **PARSE-01**: `search_messages` rejects invalid ISO-8601 timestamps with an
   actionable error naming the parameter and accepted format (trailing `Z`
   accepted), instead of leaking the raw `fromisoformat` error.
 
@@ -48,10 +48,10 @@ verifies them end-to-end and documents them, and adds the genuinely new work
 
 ### Test coverage (COV)
 
-- [ ] **COV-01**: `consumer_group_lag` has automated coverage across the faces it
+- [x] **COV-01**: `consumer_group_lag` has automated coverage across the faces it
   is exposed on.
 
-- [ ] **COV-02**: `correlate_messages` has automated coverage across the faces it
+- [x] **COV-02**: `correlate_messages` has automated coverage across the faces it
   is exposed on.
 
 ## Future Requirements
@@ -77,10 +77,10 @@ Deferred beyond v1.3:
 | MTLS-01 | Phase 11 | Complete |
 | MTLS-02 | Phase 11 | Complete |
 | MTLS-03 | Phase 11 | Complete |
-| HINT-01 | Phase 12 | Pending |
-| PARSE-01 | Phase 12 | Pending |
-| COV-01 | Phase 12 | Pending |
-| COV-02 | Phase 12 | Pending |
+| HINT-01 | Phase 12 | Complete |
+| PARSE-01 | Phase 12 | Complete |
+| COV-01 | Phase 12 | Complete |
+| COV-02 | Phase 12 | Complete |
 | PKG-01 | Phase 13 | Pending |
 | PKG-02 | Phase 13 | Pending |
 
