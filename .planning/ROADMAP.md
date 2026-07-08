@@ -146,7 +146,9 @@ brick stays structurally read-only and its tool surface is frozen.
   4. `correlate_messages` has automated coverage exercising it across each face it is exposed on — verifiable via `pytest tests/ -k "correlate" -v`
   5. The full suite stays green with the added tests and no regressions — verifiable via `pytest tests/ --tb=short`
 
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 12-01-PLAN.md — HINT-01 hint annotations across stdio/HTTP MCP/REST + PARSE-01 timestamp-parse coverage
+- [ ] 12-02-PLAN.md — COV-01 consumer_group_lag + COV-02 correlate_messages face coverage (base64 raw + timestamp round-trip)
 **UI hint**: no
 
 ### Phase 13: Packaging & OIDC Release
