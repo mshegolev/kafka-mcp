@@ -61,7 +61,7 @@ them, and adds the genuinely new work: a real-broker mTLS integration test,
 mTLS README docs, and `consumer_group_lag` / `correlate_messages` coverage. The
 brick stays structurally read-only and its tool surface is frozen.
 
-- [ ] **Phase 11: mTLS Transport Hardening** — Verify client-certificate mTLS is wired into both consumer and admin config, prove it end-to-end against a real SSL broker, and document setup in README
+- [x] **Phase 11: mTLS Transport Hardening** — Verify client-certificate mTLS is wired into both consumer and admin config, prove it end-to-end against a real SSL broker, and document setup in README (completed 2026-07-08)
 - [ ] **Phase 12: Tool-Surface Robustness & Coverage** — Assert `idempotentHint`/`openWorldHint` annotations across all faces, harden `search_messages` timestamp errors, and add coverage for `consumer_group_lag` and `correlate_messages`
 - [ ] **Phase 13: Packaging & OIDC Release** — Lock the `kafka-events-mcp` distribution identity end-to-end and verify the OIDC Trusted Publishing release path with no stored tokens
 
@@ -126,9 +126,9 @@ brick stays structurally read-only and its tool surface is frozen.
   3. An integration test brings up a real SSL-enabled broker (testcontainers) with a server cert + client cert, connects the brick over mTLS, and successfully performs a read-only operation (`list_topics` and/or `describe_topic`) — verifiable via `pytest -m integration -k "mtls or ssl" -v` going green against the SSL broker
   4. README documents mTLS setup end-to-end: the `KAFKA_MCP_SSL_*` env var names, expected cert/key/CA file paths, `SECURITY_PROTOCOL=SSL`, and key-password handling — verifiable by a human following README to configure mTLS with no reference to source code
 
-**Plans**: 1/2 plans executed
+**Plans**: 2/2 plans complete
 
-- [ ] 11-01-PLAN.md — Assert mTLS ssl.* wiring on the AdminClient conf (MTLS-01) + README mTLS docs (MTLS-03)
+- [x] 11-01-PLAN.md — Assert mTLS ssl.* wiring on the AdminClient conf (MTLS-01) + README mTLS docs (MTLS-03)
 - [x] 11-02-PLAN.md — Env-gated real-broker mTLS end-to-end read-only integration test (MTLS-02)
 
 **UI hint**: no
@@ -178,7 +178,7 @@ brick stays structurally read-only and its tool surface is frozen.
 | 8. Multi-Topic Search & Header Filtering | v1.2 | 1/1 | Complete | 2026-06-18 |
 | 9. Correlation Engine | v1.2 | 1/1 | Complete | 2026-06-18 |
 | 10. 4-Face Symmetry & Integration Tests | v1.2 | 1/1 | Complete | 2026-06-18 |
-| 11. mTLS Transport Hardening | v1.3 | 1/2 | In Progress|  |
+| 11. mTLS Transport Hardening | v1.3 | 2/2 | Complete   | 2026-07-08 |
 | 12. Tool-Surface Robustness & Coverage | v1.3 | 0/? | Not started | - |
 | 13. Packaging & OIDC Release | v1.3 | 0/? | Not started | - |
 </content>

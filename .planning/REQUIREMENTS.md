@@ -15,14 +15,14 @@ verifies them end-to-end and documents them, and adds the genuinely new work
 
 ### mTLS client certificates (MTLS)
 
-- [ ] **MTLS-01**: Operator can configure client-certificate mTLS via
+- [x] **MTLS-01**: Operator can configure client-certificate mTLS via
   `KAFKA_MCP_SSL_CERTIFICATE_LOCATION` / `SSL_KEY_LOCATION` / `SSL_CA_LOCATION` /
   `SSL_KEY_PASSWORD`, wired into BOTH the consumer and the admin librdkafka config.
 
 - [x] **MTLS-02**: mTLS connectivity is verified end-to-end against a real SSL
   broker — an integration test lists topics / describes a topic over mTLS.
 
-- [ ] **MTLS-03**: mTLS setup is documented in README (env vars, cert paths,
+- [x] **MTLS-03**: mTLS setup is documented in README (env vars, cert paths,
   `SECURITY_PROTOCOL=SSL`, key-password handling).
 
 ### Tool annotations (HINT)
@@ -74,9 +74,9 @@ Deferred beyond v1.3:
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MTLS-01 | Phase 11 | Pending |
+| MTLS-01 | Phase 11 | Complete |
 | MTLS-02 | Phase 11 | Complete |
-| MTLS-03 | Phase 11 | Pending |
+| MTLS-03 | Phase 11 | Complete |
 | HINT-01 | Phase 12 | Pending |
 | PARSE-01 | Phase 12 | Pending |
 | COV-01 | Phase 12 | Pending |

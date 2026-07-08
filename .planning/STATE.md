@@ -6,15 +6,15 @@ current_phase: 11
 current_phase_name: mTLS Transport Hardening
 status: planning
 stopped_at: v1.3 roadmap created — 3 phases (11–13), 9 requirements mapped
-last_updated: "2026-07-08T17:41:40.960Z"
+last_updated: "2026-07-08T17:50:52.290Z"
 last_activity: 2026-07-09
-last_activity_desc: Completed 11-02-PLAN.md (env-gated mTLS e2e test)
+last_activity_desc: Completed 11-01-PLAN.md (AdminClient mTLS assertions + README mTLS docs)
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
-  percent: 0
+  completed_plans: 2
+  percent: 17
 ---
 
 # Project State
@@ -31,10 +31,10 @@ FastAPI.
 
 ## Current Position
 
-Phase: 11 (mTLS Transport Hardening) — in progress
-Plan: 11-02 complete (MTLS-02 e2e test)
-Status: Plan 11-02 executed; plan 11-01 still to be summarized/verified
-Last activity: 2026-07-09 — Completed 11-02-PLAN.md (env-gated mTLS e2e test)
+Phase: 11 (mTLS Transport Hardening) — plans 11-01 and 11-02 complete
+Plan: 11-01 complete (MTLS-01 AdminClient assertions, MTLS-03 README mTLS docs)
+Status: Both phase-11 plans executed and summarized (MTLS-01/02/03 delivered)
+Last activity: 2026-07-09 — Completed 11-01-PLAN.md (AdminClient mTLS assertions + README docs)
 
 ## Performance Metrics
 
@@ -54,6 +54,7 @@ Last activity: 2026-07-09 — Completed 11-02-PLAN.md (env-gated mTLS e2e test)
 
 *Updated after each plan completion*
 | Phase 11 P02 | 12min | 1 tasks | 1 files |
+| Phase 11 P01 | 28min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -70,6 +71,8 @@ Last activity: 2026-07-09 — Completed 11-02-PLAN.md (env-gated mTLS e2e test)
 - [v1.3] Hardening milestone: much code already landed during development (mTLS wiring, hint annotations, _parse_iso_utc, kafka-events-mcp rename, OIDC release workflow) — phases verify end-to-end + add tests/docs, not greenfield
 - [v1.3] Tool surface frozen and brick stays read-only for the milestone
 - [Phase ?]: MTLS-02: env-gated real-broker mTLS e2e test (skipif on broker+cert+key+CA env) — reuses staging contour via env, no cert material committed (11-02)
+- [Phase 11]: MTLS-01: assert ssl.* on both consumer + admin conf via one parametrized test capturing both builders (11-01)
+- [Phase 11]: Made test_adapters.py config tests hermetic (_env_file=None + ambient KAFKA_MCP_* clearing) so a developer .env cannot leak real ssl.* cert paths (11-01)
 
 ### Pending Todos
 
@@ -81,7 +84,7 @@ None. v1.3 roadmap created; 3 phases (11–13), 9 requirements mapped. Ready for
 
 ## Session Continuity
 
-Last session: 2026-07-08T17:35:29.122Z
+Last session: 2026-07-08T17:50:52.284Z
 Stopped at: v1.3 roadmap created — 3 phases (11–13), 9 requirements mapped
 Resume file: None
 Next action: `/gsd-plan-phase 11`
