@@ -308,6 +308,66 @@ class TestConfluentConsumerAdapterGetPartitionIds:
                 pytest.fail("transient error mistranslated to TopicNotFound")
 
 
+def _make_topic_metadata_with_leaders(topic: str, leaders: dict[int, int]) -> MagicMock:
+    """list_topics(topic=...) result where each partition carries a real leader."""
+    meta = MagicMock()
+    topic_meta = MagicMock()
+    topic_meta.error = None
+    topic_meta.partitions = {
+        pid: MagicMock(id=pid, leader=leader) for pid, leader in leaders.items()
+    }
+    meta.topics = {topic: topic_meta}
+    return meta
+
+
+class TestConfluentConsumerAdapterGetPartitionLeaders:
+    """get_partition_leaders: real leader broker ids from cluster metadata (P3)."""
+
+    def _make_adapter(self, mock_consumer: MagicMock) -> object:
+        from kafka_mcp.adapters.outbound.confluent_consumer import (
+            ConfluentConsumerAdapter,
+        )
+
+        settings = _make_settings()
+        with (
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.Consumer",
+                return_value=mock_consumer,
+            ),
+            patch(
+                "kafka_mcp.adapters.outbound.confluent_consumer.AdminClient",
+                return_value=MagicMock(),
+            ),
+        ):
+            return ConfluentConsumerAdapter(settings)
+
+    def test_returns_partition_to_leader_map(self) -> None:
+        mock_consumer = MagicMock()
+        mock_consumer.list_topics.return_value = _make_topic_metadata_with_leaders(
+            "payments", {0: 7, 1: 3, 2: 7}
+        )
+        adapter = self._make_adapter(mock_consumer)
+        assert adapter.get_partition_leaders("payments") == {0: 7, 1: 3, 2: 7}
+
+    def test_missing_topic_returns_empty_map(self) -> None:
+        """Best-effort: absent topic yields {} (get_partition_ids owns 404)."""
+        mock_consumer = MagicMock()
+        mock_consumer.list_topics.return_value = _make_topic_metadata("ghost")
+        adapter = self._make_adapter(mock_consumer)
+        assert adapter.get_partition_leaders("ghost") == {}
+
+    def test_transient_error_returns_empty_map(self) -> None:
+        """A transient metadata error must not fail describe_topic over leader."""
+        from confluent_kafka import KafkaError
+
+        mock_consumer = MagicMock()
+        mock_consumer.list_topics.return_value = _make_topic_metadata(
+            "payments", error=KafkaError(KafkaError.LEADER_NOT_AVAILABLE)
+        )
+        adapter = self._make_adapter(mock_consumer)
+        assert adapter.get_partition_leaders("payments") == {}
+
+
 # ---------------------------------------------------------------------------
 # ConfluentConsumerAdapter — context manager
 # ---------------------------------------------------------------------------

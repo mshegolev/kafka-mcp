@@ -1,133 +1,196 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.mshegolev/kafka-mcp",
-  "description": "Read-only Kafka MCP brick — list topics, describe partitions, search messages by key in a time window, retrieve individual messages; safe for investigator agents.",
+  "name": "io.github.mshegolev/kafka-events-mcp",
+  "description": "Read-only Kafka MCP brick — list topics, describe partitions, search messages by key in a time window, retrieve individual messages, correlate event chains across topics; safe for investigator agents.",
   "repository": {
     "url": "https://github.com/mshegolev/kafka-mcp",
     "source": "github"
   },
-  "version": "1.1.0",
+  "version": "0.2.0",
   "packages": [
     {
       "registryType": "pypi",
-      "identifier": "kafka-mcp",
-      "version": "1.1.0",
+      "identifier": "kafka-events-mcp",
+      "version": "0.2.0",
       "transport": {
         "type": "stdio"
       },
       "environmentVariables": [
         {
-          "name": "KAFKA_BOOTSTRAP_SERVERS",
+          "name": "KAFKA_MCP_BOOTSTRAP_SERVERS",
           "description": "Comma-separated list of Kafka broker addresses, e.g. broker1:9092,broker2:9092",
           "isRequired": true,
           "format": "string"
         },
         {
-          "name": "KAFKA_SECURITY_PROTOCOL",
-          "description": "Security protocol: PLAINTEXT, SSL, SASL_PLAINTEXT, SASL_SSL",
+          "name": "KAFKA_MCP_SECURITY_PROTOCOL",
+          "description": "librdkafka security protocol: PLAINTEXT, SSL, SASL_PLAINTEXT, SASL_SSL",
           "isRequired": false,
           "format": "string",
           "default": "PLAINTEXT"
         },
         {
-          "name": "KAFKA_SASL_MECHANISM",
-          "description": "SASL mechanism: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512",
+          "name": "KAFKA_MCP_SASL_MECHANISM",
+          "description": "SASL mechanism: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, GSSAPI",
           "isRequired": false,
           "format": "string"
         },
         {
-          "name": "KAFKA_SASL_USERNAME",
+          "name": "KAFKA_MCP_SASL_USERNAME",
           "description": "SASL username for broker authentication",
           "isRequired": false,
           "format": "string"
         },
         {
-          "name": "KAFKA_SASL_PASSWORD",
+          "name": "KAFKA_MCP_SASL_PASSWORD",
           "description": "SASL password for broker authentication",
           "isRequired": false,
           "isSecret": true,
           "format": "string"
         },
         {
-          "name": "SCHEMA_REGISTRY_URL",
-          "description": "Confluent Schema Registry URL for Avro/Protobuf/JSON Schema decode",
+          "name": "KAFKA_MCP_SSL_CA_LOCATION",
+          "description": "Path to the CA certificate (PEM) that verifies the broker (ssl.ca.location); enables TLS/mTLS.",
           "isRequired": false,
           "format": "string"
         },
         {
-          "name": "KAFKA_SSL_VERIFY",
-          "description": "Verify SSL certificates (true/false). Set to 'false' for self-signed certs.",
+          "name": "KAFKA_MCP_SSL_CERTIFICATE_LOCATION",
+          "description": "Path to the client certificate (PEM) for mTLS (ssl.certificate.location)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "KAFKA_MCP_SSL_KEY_LOCATION",
+          "description": "Path to the client private key (PEM) for mTLS (ssl.key.location)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "KAFKA_MCP_SSL_KEY_PASSWORD",
+          "description": "Password for the client private key, if encrypted (ssl.key.password)",
+          "isRequired": false,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "KAFKA_MCP_SCHEMA_REGISTRY_URL",
+          "description": "Confluent Schema Registry base URL for Avro/Protobuf/JSON Schema decode, e.g. http://sr:8081",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "KAFKA_MCP_SR_USER",
+          "description": "Schema Registry basic-auth username",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "KAFKA_MCP_SR_PASS",
+          "description": "Schema Registry basic-auth password",
+          "isRequired": false,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "KAFKA_MCP_MAX_SCAN",
+          "description": "Maximum messages to scan per operation (guards against unbounded scans)",
           "isRequired": false,
           "format": "string",
-          "default": "true"
+          "default": "100000"
+        },
+        {
+          "name": "KAFKA_MCP_POLL_TIMEOUT",
+          "description": "consumer.poll() timeout in seconds",
+          "isRequired": false,
+          "format": "string",
+          "default": "1.0"
         }
       ]
     }
   ],
   "remotes": [
     {
-      "name": "kafka-mcp-http",
+      "name": "kafka-events-mcp-http",
       "type": "streamable-http",
       "url": "http://localhost:8000/mcp",
       "environmentVariables": [
         {
-          "name": "KAFKA_BOOTSTRAP_SERVERS",
-          "description": "Comma-separated Kafka broker addresses",
+          "name": "KAFKA_MCP_BOOTSTRAP_SERVERS",
+          "description": "Comma-separated Kafka broker addresses, e.g. broker1:9092,broker2:9092",
           "isRequired": true,
           "format": "string"
         },
         {
-          "name": "KAFKA_SECURITY_PROTOCOL",
-          "description": "Security protocol: PLAINTEXT, SSL, SASL_PLAINTEXT, SASL_SSL",
+          "name": "KAFKA_MCP_SECURITY_PROTOCOL",
+          "description": "librdkafka security protocol: PLAINTEXT, SSL, SASL_PLAINTEXT, SASL_SSL",
           "isRequired": false,
           "format": "string",
           "default": "PLAINTEXT"
         },
         {
-          "name": "KAFKA_SASL_MECHANISM",
-          "description": "SASL mechanism: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512",
+          "name": "KAFKA_MCP_SASL_MECHANISM",
+          "description": "SASL mechanism: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, GSSAPI",
           "isRequired": false,
           "format": "string"
         },
         {
-          "name": "KAFKA_SASL_USERNAME",
+          "name": "KAFKA_MCP_SASL_USERNAME",
           "description": "SASL username for broker authentication",
           "isRequired": false,
           "format": "string"
         },
         {
-          "name": "KAFKA_SASL_PASSWORD",
+          "name": "KAFKA_MCP_SASL_PASSWORD",
           "description": "SASL password for broker authentication",
           "isRequired": false,
           "isSecret": true,
           "format": "string"
         },
         {
+          "name": "KAFKA_MCP_SSL_CA_LOCATION",
+          "description": "Path to the CA certificate (PEM) that verifies the broker (ssl.ca.location); enables TLS/mTLS.",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "KAFKA_MCP_SSL_CERTIFICATE_LOCATION",
+          "description": "Path to the client certificate (PEM) for mTLS (ssl.certificate.location)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "KAFKA_MCP_SSL_KEY_LOCATION",
+          "description": "Path to the client private key (PEM) for mTLS (ssl.key.location)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "KAFKA_MCP_SSL_KEY_PASSWORD",
+          "description": "Password for the client private key, if encrypted (ssl.key.password)",
+          "isRequired": false,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "KAFKA_MCP_SCHEMA_REGISTRY_URL",
+          "description": "Confluent Schema Registry base URL for decode, e.g. http://sr:8081",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
           "name": "KAFKA_MCP_HOST",
-          "description": "Host to bind the HTTP server (default 127.0.0.1)",
+          "description": "Host to bind the HTTP server (loopback-only by default; set 0.0.0.0 to expose)",
           "isRequired": false,
           "format": "string",
           "default": "127.0.0.1"
         },
         {
           "name": "KAFKA_MCP_PORT",
-          "description": "Port to bind the HTTP server (default 8000)",
+          "description": "Port to bind the HTTP server",
           "isRequired": false,
           "format": "string",
           "default": "8000"
-        },
-        {
-          "name": "SCHEMA_REGISTRY_URL",
-          "description": "Confluent Schema Registry URL for decode",
-          "isRequired": false,
-          "format": "string"
-        },
-        {
-          "name": "KAFKA_SSL_VERIFY",
-          "description": "Verify SSL certificates (true/false)",
-          "isRequired": false,
-          "format": "string",
-          "default": "true"
         }
       ]
     }
