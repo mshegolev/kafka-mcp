@@ -233,6 +233,41 @@ class TestTopicService:
             svc.describe_topic("nonexistent-topic")
         assert exc_info.value.topic == "nonexistent-topic"
 
+    def test_describe_topic_leader_defaults_to_zero_without_capability(self) -> None:
+        """A consumer that does not expose get_partition_leaders (like the base
+        MockConsumer) yields the best-effort leader=0 fallback."""
+        svc = self._make_service()
+        ti = svc.describe_topic("payments")
+        assert all(p.leader == 0 for p in ti.partitions)
+
+    def test_describe_topic_surfaces_real_leader_when_available(self) -> None:
+        """When the consumer exposes get_partition_leaders, describe_topic
+        reports the real per-partition leader broker id (P3 fix)."""
+        from kafka_mcp.domain.search_service import TopicService
+
+        class LeaderAwareConsumer(MockConsumer):
+            def get_partition_leaders(self, topic: str) -> dict[int, int]:
+                return {0: 7, 1: 3}
+
+        svc = TopicService(LeaderAwareConsumer(), MockSchemaRegistry())
+        ti = svc.describe_topic("payments")
+        leaders = {p.id: p.leader for p in ti.partitions}
+        assert leaders == {0: 7, 1: 3}
+
+    def test_describe_topic_missing_leader_entry_falls_back_to_zero(self) -> None:
+        """Partitions absent from the leader map still default to 0 (partial
+        metadata must not break describe_topic)."""
+        from kafka_mcp.domain.search_service import TopicService
+
+        class PartialLeaderConsumer(MockConsumer):
+            def get_partition_leaders(self, topic: str) -> dict[int, int]:
+                return {0: 5}  # partition 1 omitted
+
+        svc = TopicService(PartialLeaderConsumer(), MockSchemaRegistry())
+        ti = svc.describe_topic("payments")
+        leaders = {p.id: p.leader for p in ti.partitions}
+        assert leaders == {0: 5, 1: 0}
+
     def test_topic_service_stores_consumer(self) -> None:
         from kafka_mcp.domain.search_service import TopicService
 

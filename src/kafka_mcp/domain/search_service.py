@@ -317,14 +317,19 @@ class TopicService:
             TopicNotFoundError: If the topic does not exist on the broker.
 
         Note:
-            ``PartitionInfo.leader`` is set to ``0`` as a placeholder.
-            Leader info requires an AdminClient call — deferred to
-            Phase 2 per CONTEXT.md (AdminClient-based metadata APIs
-            are out of scope for Phase 1 v1).
-            # TODO: AdminClient — wire real leader in Phase 2
+            ``PartitionInfo.leader`` carries the real leader broker id when the
+            consumer exposes ``get_partition_leaders`` (the confluent adapter
+            reads it from the same cluster-metadata payload). For consumers that
+            do not surface leader metadata it stays ``0`` (best-effort — leader
+            is cosmetic, never an evidence field).
         """
         # Raises TopicNotFoundError if topic absent (T-03-03 mitigation)
         partition_ids = self._consumer.get_partition_ids(topic)
+
+        # Best-effort leader enrichment: use it when the port provides it,
+        # otherwise fall back to 0 without failing describe_topic.
+        get_leaders = getattr(self._consumer, "get_partition_leaders", None)
+        leaders: dict[int, int] = get_leaders(topic) if callable(get_leaders) else {}
 
         partitions: list[PartitionInfo] = []
         for pid in partition_ids:
@@ -332,7 +337,7 @@ class TopicService:
             partitions.append(
                 PartitionInfo(
                     id=pid,
-                    leader=0,  # TODO: AdminClient — wire real leader (Phase 2)
+                    leader=leaders.get(pid, 0),
                     earliest=low,
                     latest=high,
                 )

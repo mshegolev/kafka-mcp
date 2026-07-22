@@ -190,6 +190,25 @@ class ConfluentConsumerAdapter:
             raise KafkaException(err)
         return sorted(topic_meta.partitions.keys())
 
+    def get_partition_leaders(self, topic: str) -> dict[int, int]:
+        """Return ``{partition_id: leader_broker_id}`` for the topic.
+
+        The leader broker id is carried by ``PartitionMetadata.leader`` in the
+        very same cluster-metadata payload ``get_partition_ids`` already reads,
+        so this adds only one metadata round-trip and no AdminClient dependency.
+
+        Best-effort enrichment: the authoritative not-found signal comes from
+        ``get_partition_ids`` (called first by ``describe_topic``). If the topic
+        is absent or the broker returns a transient metadata error here, an
+        empty mapping is returned rather than raising, so ``describe_topic``
+        never regresses to a failure over cosmetic leader data.
+        """
+        metadata = self._consumer.list_topics(topic=topic, timeout=10.0)
+        topic_meta = metadata.topics.get(topic)
+        if topic_meta is None or topic_meta.error is not None:
+            return {}
+        return {pid: pmeta.leader for pid, pmeta in topic_meta.partitions.items()}
+
     def get_watermark_offsets(self, topic: str, partition: int) -> tuple[int, int]:
         """Return (low, high) watermark offsets for the given partition.
 
