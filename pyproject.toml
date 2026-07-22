@@ -41,6 +41,7 @@ dependencies = [
     "protobuf>=6.30",
     "googleapis-common-protos>=1.75.0",
     "grpcio-tools>=1.60",
+    "jsonpath-ng>=1.6",
 ]
 
 [project.optional-dependencies]
