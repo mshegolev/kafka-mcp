@@ -11,6 +11,7 @@ OIDC Trusted Publishing release contract so neither can silently regress.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -25,6 +26,8 @@ PYPROJECT = REPO_ROOT / "pyproject.toml"
 README = REPO_ROOT / "README.md"
 CHANGELOG = REPO_ROOT / "CHANGELOG.md"
 RELEASE_WF = REPO_ROOT / ".github" / "workflows" / "release.yml"
+SERVER_JSON = REPO_ROOT / "server.json"
+GLAMA_JSON = REPO_ROOT / "glama.json"
 
 DIST_NAME = "kafka-events-mcp"
 
@@ -102,6 +105,68 @@ class TestDistributionIdentity:
         norm = DIST_NAME.replace("-", "_")
         assert any(a.startswith(norm) for a in artifacts), (
             f"expected {norm}-* artifacts, got {artifacts}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# PKG-01 — publish-metadata parity (pyproject <-> server.json <-> glama.json)
+# ---------------------------------------------------------------------------
+
+
+class TestPublishMetadataParity:
+    """server.json / glama.json must agree with pyproject on distribution
+    identity, and server.json env vars must use the real KAFKA_MCP_ prefix
+    (config.py env_prefix) so an operator following it can actually connect.
+    """
+
+    def _server(self) -> dict:
+        return json.loads(SERVER_JSON.read_text(encoding="utf-8"))
+
+    def _glama(self) -> dict:
+        return json.loads(GLAMA_JSON.read_text(encoding="utf-8"))
+
+    @pytest.mark.skipif(tomllib is None, reason="no TOML parser (tomllib/tomli)")
+    def test_server_json_version_matches_pyproject(self) -> None:
+        version = _project()["version"]
+        server = self._server()
+        assert server["version"] == version, "server.json top-level version drift"
+        for pkg in server.get("packages", []):
+            assert pkg["version"] == version, f"server.json package version drift: {pkg}"
+
+    @pytest.mark.skipif(tomllib is None, reason="no TOML parser (tomllib/tomli)")
+    def test_server_json_pypi_identifier_is_distribution(self) -> None:
+        pypi = [p for p in self._server().get("packages", []) if p.get("registryType") == "pypi"]
+        assert pypi, "server.json declares no pypi package"
+        for pkg in pypi:
+            assert pkg["identifier"] == DIST_NAME, (
+                f"server.json pypi identifier must be {DIST_NAME}, got {pkg['identifier']!r}"
+            )
+
+    def test_glama_name_is_distribution(self) -> None:
+        assert self._glama()["name"] == DIST_NAME
+
+    def test_server_json_broker_env_is_prefixed(self) -> None:
+        """The required broker var must be KAFKA_MCP_BOOTSTRAP_SERVERS, not the
+        unprefixed KAFKA_BOOTSTRAP_SERVERS that config.py never reads.
+        """
+        server = self._server()
+        for block in (*server.get("packages", []), *server.get("remotes", [])):
+            names = {ev["name"] for ev in block.get("environmentVariables", [])}
+            assert "KAFKA_MCP_BOOTSTRAP_SERVERS" in names, (
+                f"block advertises no KAFKA_MCP_BOOTSTRAP_SERVERS: {sorted(names)}"
+            )
+            # No unprefixed KAFKA_* connection vars may leak back in.
+            leaked = {
+                n
+                for n in names
+                if n.startswith("KAFKA_") and not n.startswith("KAFKA_MCP_")
+            }
+            assert not leaked, f"unprefixed env vars config.py won't read: {sorted(leaked)}"
+
+    def test_glama_tool_list_covers_correlate_messages(self) -> None:
+        tool_names = {t["name"] for t in self._glama().get("tools", [])}
+        assert "correlate_messages" in tool_names, (
+            f"glama.json omits correlate_messages: {sorted(tool_names)}"
         )
 
 
