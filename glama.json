@@ -1,8 +1,8 @@
 {
   "$schema": "https://glama.ai/mcp/schemas/server.json",
-  "name": "kafka-mcp",
-  "displayName": "Kafka MCP",
-  "description": "Read-only Kafka MCP brick — list topics, describe partitions, search messages by key in a time window, retrieve individual messages. Safe for investigator agents; no offset commits, no produce.",
+  "name": "kafka-events-mcp",
+  "displayName": "Kafka Events MCP",
+  "description": "Read-only Kafka MCP brick — list topics, describe partitions, search messages by key in a time window, retrieve individual messages, correlate event chains across topics. Safe for investigator agents; no offset commits, no produce.",
   "vendor": "kafka-mcp contributors",
   "sourceUrl": "https://github.com/mshegolev/kafka-mcp",
   "homepage": "https://github.com/mshegolev/kafka-mcp",
@@ -48,6 +48,11 @@
     {
       "name": "consumer_group_lag",
       "description": "Report per-partition consumer lag (committed offset vs end offset) for a given consumer group. Read-only — no commits, no group joins.",
+      "readOnlyHint": true
+    },
+    {
+      "name": "correlate_messages",
+      "description": "Correlate messages by following IDs extracted from initial results into additional topics, building a cross-service event chain. Read-only.",
       "readOnlyHint": true
     }
   ],
