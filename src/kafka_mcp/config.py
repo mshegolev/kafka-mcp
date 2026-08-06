@@ -153,6 +153,23 @@ class KafkaMcpSettings(BaseSettings):
     """consumer.poll() timeout in seconds."""
 
     # ------------------------------------------------------------------ #
+    # Connection deadlines                                                #
+    # ------------------------------------------------------------------ #
+    # librdkafka retries a failing connection indefinitely by default, and it
+    # does so on a background thread the caller cannot interrupt — an asyncio
+    # deadline around the call cannot cut a thread short. Measured on ep-stage
+    # 2026-08-06: one search stayed inside that retry loop for 352 seconds
+    # under a 60s budget, because the broker was rejecting the client
+    # certificate and librdkafka simply kept trying. These caps convert an
+    # unreachable broker into a bounded, reportable failure.
+
+    socket_timeout_ms: int = 15_000
+    """librdkafka ``socket.timeout.ms`` — per-request network deadline."""
+
+    metadata_timeout_ms: int = 15_000
+    """librdkafka ``metadata.request.timeout.ms`` — metadata fetch deadline."""
+
+    # ------------------------------------------------------------------ #
     # Validation                                                          #
     # ------------------------------------------------------------------ #
 
