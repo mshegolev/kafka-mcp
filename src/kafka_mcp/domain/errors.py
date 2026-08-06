@@ -95,6 +95,40 @@ class TransientError(Exception):
         self.reason = reason
 
 
+class BrokerUnreachableError(Exception):
+    """Raised when an operation completed only because the broker was unreachable.
+
+    Distinct from every "not found"/"empty" outcome in this module, and that
+    distinction is the entire point. librdkafka reports connection-level
+    failures — rejected TLS handshake, all brokers down, refused authentication
+    — through an *asynchronous* error callback, not by raising from ``poll()``.
+    A search against a broker that is refusing the connection therefore finishes
+    normally and returns an empty list, which reads downstream as *this data
+    does not exist*.
+
+    Observed on ep-stage 2026-08-06: the broker was rejecting the client
+    certificate and an investigation recorded Kafka as ``empty`` — no exception,
+    no log line, nothing to investigate. "There is no such message" and "we
+    never reached the broker" call for opposite responses from an operator;
+    conflating them costs far more time than an explicit error ever does.
+
+    Attributes:
+        detail: The connection error librdkafka reported, verbatim. It carries
+            the broker address and reason, never credentials.
+
+    Example::
+
+        raise BrokerUnreachableError("_SSL: broker certificate rejected")
+    """
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(
+            f"Broker unreachable: {detail}. The operation returned no data, but the "
+            f"connection failed — an empty result is only meaningful over a working link."
+        )
+        self.detail = detail
+
+
 class MessageNotFoundError(Exception):
     """Raised when a message at the requested coordinates does not exist.
 

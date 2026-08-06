@@ -16,6 +16,8 @@ and never stored or logged.
 
 from __future__ import annotations
 
+import logging
+import threading
 from datetime import datetime, timezone
 from types import TracebackType
 from uuid import uuid4
@@ -38,10 +40,64 @@ from kafka_mcp.domain.errors import (
 )
 from kafka_mcp.domain.models import KafkaMessage, LagRecord
 
+logger = logging.getLogger(__name__)
+
 # Synchronous broker metadata round-trips (list_topics, watermark fetch)
 # use a generous fixed budget. This is deliberately NOT poll_timeout, which
 # is reserved for actual consumer.poll() calls (WR-03).
 _METADATA_TIMEOUT_SECONDS = 10.0
+
+
+class ConnectionErrorRecorder:
+    """Captures librdkafka's asynchronous error stream so callers can see it.
+
+    librdkafka reports connection-level failures — TLS handshake rejected, all
+    brokers down, authentication refused — through an *asynchronous* error
+    callback, not by raising from ``poll()``. Without an ``error_cb`` those
+    errors are discarded by the client library, ``poll()`` simply keeps
+    returning ``None`` until the caller's deadline, and the caller concludes
+    "no messages matched".
+
+    Observed on ep-stage 2026-08-06: the broker was rejecting the client
+    certificate (the pod carried ``CN=escart`` where the working clients carry
+    ``CN=eord``), yet a search over that broker returned an empty result with
+    no exception and not one log line. Downstream, "empty" means *there is no
+    such data* — the operator looks in the wrong place, sometimes for days.
+    Telling "no data" apart from "no connection" is the whole job here, so the
+    error stream has to be captured rather than dropped.
+
+    Thread-safety: librdkafka invokes the callback from its internal poll
+    thread, so state is guarded by a lock.
+    """
+
+    def __init__(self, component: str) -> None:
+        self._component = component
+        self._lock = threading.Lock()
+        self._last_error: str | None = None
+        self._count = 0
+
+    def __call__(self, err: KafkaError) -> None:
+        # KafkaError.str() carries the broker address and reason, never
+        # credentials — sasl.password / ssl.key.password are held inside
+        # librdkafka's config and are not part of error text.
+        label = f"{err.name()}: {err.str()}"
+        with self._lock:
+            self._last_error = label
+            self._count += 1
+        # WARNING, not DEBUG: this is the only surface on which a broken
+        # connection is visible at all.
+        logger.warning("kafka %s connection error: %s", self._component, label)
+
+    @property
+    def last_error(self) -> str | None:
+        """Most recent connection-level error, or None if the link is clean."""
+        with self._lock:
+            return self._last_error
+
+    @property
+    def error_count(self) -> int:
+        with self._lock:
+            return self._count
 
 
 class ConfluentConsumerAdapter:
@@ -67,11 +123,25 @@ class ConfluentConsumerAdapter:
         """
         self._settings = settings
 
+        # Surfaces librdkafka's asynchronous error stream; see
+        # ConnectionErrorRecorder for why silence here is the dangerous case.
+        self._errors = ConnectionErrorRecorder("consumer")
+        self._admin_errors = ConnectionErrorRecorder("admin")
+
         conf: dict[str, object] = {
             "bootstrap.servers": settings.bootstrap_servers,
             # Read-only structural guarantees (KAFKA-06)
             "enable.auto.commit": False,
             "group.id": f"kafka-mcp-ro-{uuid4()}",
+            "error_cb": self._errors,
+            # Bound the reconnect/metadata cycle. librdkafka retries a failing
+            # connection forever by default, and because that retry loop lives
+            # in a background thread the caller's asyncio deadline cannot cut
+            # it short — a thread has no interruption point. On ep-stage a
+            # single search sat in that loop for 352 seconds under a 60s
+            # budget. These caps make the failure surface in seconds instead.
+            "socket.timeout.ms": settings.socket_timeout_ms,
+            "metadata.request.timeout.ms": settings.metadata_timeout_ms,
         }
 
         if settings.security_protocol != "PLAINTEXT":
@@ -111,6 +181,9 @@ class ConfluentConsumerAdapter:
         # (enable.auto.commit, group.id) are not applicable to AdminClient.
         admin_conf: dict[str, object] = {
             "bootstrap.servers": settings.bootstrap_servers,
+            "error_cb": self._admin_errors,
+            "socket.timeout.ms": settings.socket_timeout_ms,
+            "metadata.request.timeout.ms": settings.metadata_timeout_ms,
         }
         if settings.security_protocol != "PLAINTEXT":
             admin_conf["security.protocol"] = settings.security_protocol
@@ -131,6 +204,17 @@ class ConfluentConsumerAdapter:
         if settings.ssl_key_password is not None:
             admin_conf["ssl.key.password"] = settings.ssl_key_password.get_secret_value()
         self._admin: AdminClient = AdminClient(admin_conf)
+
+    @property
+    def last_connection_error(self) -> str | None:
+        """Most recent connection-level failure reported by librdkafka, if any.
+
+        Deliberately NOT part of ``ConsumerPort``: the Protocol is what every
+        test double implements, and widening it would break each of them for a
+        diagnostic detail only the live adapter can supply. Callers read this
+        defensively (``getattr``) so a mock without it behaves exactly as before.
+        """
+        return self._errors.last_error or self._admin_errors.last_error
 
     # ------------------------------------------------------------------
     # ConsumerPort implementation

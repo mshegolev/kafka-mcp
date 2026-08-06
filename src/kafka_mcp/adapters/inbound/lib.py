@@ -36,6 +36,7 @@ from kafka_mcp.adapters.outbound.confluent_consumer import (
 )
 from kafka_mcp.config import KafkaMcpSettings
 from kafka_mcp.domain.correlation_service import CorrelationService
+from kafka_mcp.domain.errors import BrokerUnreachableError
 from kafka_mcp.domain.models import KafkaMessage, LagRecord, TopicInfo
 from kafka_mcp.domain.search_service import TopicService
 from kafka_mcp.ports.consumer import ConsumerPort
@@ -192,8 +193,39 @@ SchemaRegistryHttpAdapter`.
         Returns:
             List of :class:`KafkaMessage` objects with decoded values and
             evidence keys populated (Phase 2 SC-1).
+
+        Raises:
+            BrokerUnreachableError: When the search found nothing AND librdkafka
+                reported a connection-level failure while it ran. An empty
+                result is only trustworthy over a working link.
         """
-        return self._service.search_messages(key, **kwargs)
+        messages = self._service.search_messages(key, **kwargs)
+        if not messages:
+            self._reject_empty_result_over_a_broken_link()
+        return messages
+
+    def _reject_empty_result_over_a_broken_link(self) -> None:
+        """Refuse to pass off "nothing found" when the link itself was down.
+
+        librdkafka surfaces connection failures — rejected TLS handshake, all
+        brokers down, refused authentication — through an asynchronous error
+        callback rather than by raising from ``poll()``. So a search against an
+        unreachable broker completes normally and returns an empty list, and the
+        caller reads it as *this data does not exist*.
+
+        That happened on ep-stage 2026-08-06: the broker was rejecting the
+        client certificate, and the investigator recorded Kafka as ``empty`` —
+        no exception, no log line. "There is no such message" and "we never
+        reached the broker" demand opposite responses from an operator, and
+        collapsing them costs far more time than an error ever does.
+
+        Read via ``getattr`` on purpose: ``last_connection_error`` belongs to
+        the live adapter, not to ``ConsumerPort``, so every existing test double
+        keeps working and simply skips this check.
+        """
+        error = getattr(self._consumer, "last_connection_error", None)
+        if error:
+            raise BrokerUnreachableError(error)
 
     def get_message(
         self,
