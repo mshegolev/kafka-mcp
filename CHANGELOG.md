@@ -7,6 +7,20 @@ versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-07
+
+### Fixed
+
+- **`mcp` dependency bounded to `>=1.27,<2`.** `mcp 2.0.0` removed
+  `mcp.server.fastmcp`, which `adapters/inbound/mcp_stdio.py` and
+  `adapters/inbound/rest_api.py` import. Without an upper bound a clean
+  install (`pip install -e '.[dev]'`, `pip install kafka-events-mcp`)
+  resolved to `mcp 2.0.0` and failed at import time with
+  `ModuleNotFoundError: No module named 'mcp.server.fastmcp'` — breaking
+  both test collection and the installed `kafka-mcp` console script.
+  `uv.lock` still pins `mcp 1.27.2`, so `uv sync` masked the breakage
+  locally while pip-based CI and PyPI installs were broken.
+
 ## [0.2.0] - 2026-07-07
 
 ### Added
@@ -80,4 +94,5 @@ versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
 [0.1.0]: https://github.com/OWNER/kafka-mcp/releases/tag/v0.1.0
 [0.2.0]: https://github.com/OWNER/kafka-mcp/compare/v0.1.0...v0.2.0
-[Unreleased]: https://github.com/OWNER/kafka-mcp/compare/v0.2.0...HEAD
+[0.2.1]: https://github.com/OWNER/kafka-mcp/compare/v0.2.0...v0.2.1
+[Unreleased]: https://github.com/OWNER/kafka-mcp/compare/v0.2.1...HEAD
