@@ -7,6 +7,24 @@ versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-08-12
+
+### Removed
+
+- **`metadata.request.timeout.ms` dropped from the Consumer and AdminClient
+  configs, and `metadata_timeout_ms` dropped from `KafkaMcpSettings`.**
+  librdkafka accepts the property and then ignores it, saying so at client
+  construction: `CONFWARN Configuration property metadata.request.timeout.ms
+  is deprecated: Not used.` (observed in ep-stage pod logs and reproduced
+  locally on confluent-kafka/librdkafka 2.14.2). It had been added alongside
+  `socket.timeout.ms` as a second guard against librdkafka's unbounded
+  reconnect loop — the loop that once held a search for 352 seconds under a
+  60s budget — but it never guarded anything. Two timeouts read as two layers
+  of defence; there was only ever one, and a reader looking for the cause of
+  a hang would have stopped looking. `socket.timeout.ms` is unchanged and
+  remains the live cap; it is now pinned by tests on both conf builders, with
+  a companion test asserting the deprecated key stays out.
+
 ## [0.2.1] - 2026-08-07
 
 ### Fixed
@@ -95,4 +113,5 @@ versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 [0.1.0]: https://github.com/OWNER/kafka-mcp/releases/tag/v0.1.0
 [0.2.0]: https://github.com/OWNER/kafka-mcp/compare/v0.1.0...v0.2.0
 [0.2.1]: https://github.com/OWNER/kafka-mcp/compare/v0.2.0...v0.2.1
-[Unreleased]: https://github.com/OWNER/kafka-mcp/compare/v0.2.1...HEAD
+[0.2.2]: https://github.com/OWNER/kafka-mcp/compare/v0.2.1...v0.2.2
+[Unreleased]: https://github.com/OWNER/kafka-mcp/compare/v0.2.2...HEAD

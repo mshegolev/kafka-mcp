@@ -898,6 +898,49 @@ class TestConfluentConsumerAdapterConfig:
         except KafkaException as exc:  # pragma: no cover - regression guard
             pytest.fail(f"librdkafka rejected a valid conf {kwargs}: {exc}")
 
+    # ------------------------------------------------------------------
+    # Connection deadline: socket.timeout.ms is the ONLY live cap.
+    #
+    # librdkafka retries a failing connection forever on a background thread
+    # the caller's asyncio deadline cannot interrupt (ep-stage: 352s under a
+    # 60s budget). socket.timeout.ms is what bounds that. Deleting it would
+    # silently restore the hang, so it is pinned here on both conf builders.
+    #
+    # metadata.request.timeout.ms sat next to it until 0.2.2 and was removed:
+    # librdkafka accepts the key but ignores it, announcing at construction
+    # "Configuration property metadata.request.timeout.ms is deprecated:
+    # Not used." (confluent-kafka/librdkafka 2.14.2). The absence assertion
+    # keeps a well-meaning reader from re-adding fake protection.
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("conf_builder", ["consumer", "admin"])
+    def test_socket_timeout_present_on_both_confs(self, conf_builder: str) -> None:
+        """socket.timeout.ms is wired into the consumer AND admin conf."""
+        from kafka_mcp.config import KafkaMcpSettings
+
+        settings = KafkaMcpSettings(
+            bootstrap_servers="localhost:9092", socket_timeout_ms=12_345
+        )
+        conf = self._capture_confs(settings)[conf_builder]
+
+        assert conf.get("socket.timeout.ms") == 12_345, (
+            f"socket.timeout.ms must be set on the {conf_builder} conf — it is "
+            f"the only cap bounding librdkafka's infinite reconnect loop: {conf}"
+        )
+
+    @pytest.mark.parametrize("conf_builder", ["consumer", "admin"])
+    def test_deprecated_metadata_timeout_absent_on_both_confs(
+        self, conf_builder: str
+    ) -> None:
+        """metadata.request.timeout.ms is never passed — librdkafka ignores it."""
+        settings = _make_settings()
+        conf = self._capture_confs(settings)[conf_builder]
+
+        assert "metadata.request.timeout.ms" not in conf, (
+            f"metadata.request.timeout.ms is deprecated/Not used in librdkafka; "
+            f"passing it only fakes a second layer of protection: {conf}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # SchemaRegistryHttpAdapter

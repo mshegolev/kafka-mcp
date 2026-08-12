@@ -160,14 +160,18 @@ class KafkaMcpSettings(BaseSettings):
     # deadline around the call cannot cut a thread short. Measured on ep-stage
     # 2026-08-06: one search stayed inside that retry loop for 352 seconds
     # under a 60s budget, because the broker was rejecting the client
-    # certificate and librdkafka simply kept trying. These caps convert an
+    # certificate and librdkafka simply kept trying. This cap converts an
     # unreachable broker into a bounded, reportable failure.
+    #
+    # A companion setting, ``metadata_timeout_ms`` (librdkafka
+    # ``metadata.request.timeout.ms``), was removed in 0.2.2 — librdkafka
+    # ignores that property and warns at client construction: "Configuration
+    # property metadata.request.timeout.ms is deprecated: Not used."
+    # It only made the code look doubly guarded. See the note in
+    # adapters/outbound/confluent_consumer.py before reintroducing it.
 
     socket_timeout_ms: int = 15_000
     """librdkafka ``socket.timeout.ms`` — per-request network deadline."""
-
-    metadata_timeout_ms: int = 15_000
-    """librdkafka ``metadata.request.timeout.ms`` — metadata fetch deadline."""
 
     # ------------------------------------------------------------------ #
     # Validation                                                          #

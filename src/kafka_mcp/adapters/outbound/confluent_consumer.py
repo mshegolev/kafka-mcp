@@ -139,9 +139,21 @@ class ConfluentConsumerAdapter:
             # in a background thread the caller's asyncio deadline cannot cut
             # it short — a thread has no interruption point. On ep-stage a
             # single search sat in that loop for 352 seconds under a 60s
-            # budget. These caps make the failure surface in seconds instead.
+            # budget. This cap makes the failure surface in seconds instead.
+            #
+            # This is the ONLY timeout doing that job. A second one,
+            # "metadata.request.timeout.ms", used to sit right here and was
+            # removed in 0.2.2: librdkafka accepts the key but ignores it, and
+            # says so out loud at client construction —
+            #   CONFWARN Configuration property metadata.request.timeout.ms
+            #   is deprecated: Not used.
+            # (reproduced on confluent-kafka/librdkafka 2.14.2). Two timeouts
+            # in this dict read as two layers of protection; there was only
+            # ever one. Do not add it back — if this cap proves too coarse,
+            # reach for a knob librdkafka still honours (socket.connection.
+            # setup.timeout.ms, reconnect.backoff.max.ms) and verify it does
+            # not emit a CONFWARN before trusting it.
             "socket.timeout.ms": settings.socket_timeout_ms,
-            "metadata.request.timeout.ms": settings.metadata_timeout_ms,
         }
 
         if settings.security_protocol != "PLAINTEXT":
@@ -182,8 +194,9 @@ class ConfluentConsumerAdapter:
         admin_conf: dict[str, object] = {
             "bootstrap.servers": settings.bootstrap_servers,
             "error_cb": self._admin_errors,
+            # Same single deadline as the consumer conf above — see the note
+            # there for why "metadata.request.timeout.ms" is not next to it.
             "socket.timeout.ms": settings.socket_timeout_ms,
-            "metadata.request.timeout.ms": settings.metadata_timeout_ms,
         }
         if settings.security_protocol != "PLAINTEXT":
             admin_conf["security.protocol"] = settings.security_protocol
