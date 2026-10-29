@@ -918,8 +918,9 @@ class TestGetMessageKeyDecode:
 
 
 def _make_raw_msg(topic="test-topic", partition=0, offset=0, key=None, headers=None, value=None):
-    from kafka_mcp.domain.models import KafkaMessage
     from datetime import datetime, timezone
+
+    from kafka_mcp.domain.models import KafkaMessage
 
     return KafkaMessage(
         topic=topic,
@@ -1008,9 +1009,10 @@ class TestSearchMessagesWithHeaders:
             return []
 
     def test_search_messages_with_headers_filtering(self) -> None:
-        from kafka_mcp.domain.search_service import TopicService
-        from kafka_mcp.domain.models import KafkaMessage
         from datetime import datetime, timezone
+
+        from kafka_mcp.domain.models import KafkaMessage
+        from kafka_mcp.domain.search_service import TopicService
 
         # Create messages with different headers
         msg1 = KafkaMessage(
@@ -1060,9 +1062,10 @@ class TestSearchMessagesWithHeaders:
         assert results[1].offset == 1
 
     def test_search_messages_with_multiple_header_filters(self) -> None:
-        from kafka_mcp.domain.search_service import TopicService
-        from kafka_mcp.domain.models import KafkaMessage
         from datetime import datetime, timezone
+
+        from kafka_mcp.domain.models import KafkaMessage
+        from kafka_mcp.domain.search_service import TopicService
 
         # Create messages with different header combinations
         msg1 = KafkaMessage(
@@ -1100,9 +1103,10 @@ class TestSearchMessagesWithHeaders:
         assert results[0].headers["source"] == "web"
 
     def test_search_messages_multi_topic_sorting(self) -> None:
-        from kafka_mcp.domain.search_service import TopicService
+        from datetime import datetime, timedelta, timezone
+
         from kafka_mcp.domain.models import KafkaMessage
-        from datetime import datetime, timezone, timedelta
+        from kafka_mcp.domain.search_service import TopicService
 
         # Create messages with different timestamps across topics
         base_time = datetime(2026, 6, 8, 12, 0, 0, tzinfo=timezone.utc)

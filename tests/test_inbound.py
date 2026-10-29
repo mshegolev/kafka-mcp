@@ -489,8 +489,9 @@ def test_cli_search_messages_headers_parsing() -> None:
         def search_messages(self, key, **kwargs):
             self.last_call_kwargs = kwargs
             # Return a minimal result
-            from kafka_mcp.domain.models import KafkaMessage
             from datetime import datetime, timezone
+
+            from kafka_mcp.domain.models import KafkaMessage
 
             return [
                 KafkaMessage(
@@ -510,7 +511,7 @@ def test_cli_search_messages_headers_parsing() -> None:
 
     client = TrackingMockKafkaClient()
 
-    output = _capture_run(
+    _capture_run(
         run_search_messages,
         client,
         key="ORD-123",

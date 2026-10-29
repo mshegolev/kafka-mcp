@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-import pytest
-
-from kafka_mcp.domain.models import KafkaMessage
 from kafka_mcp.domain.correlation_service import CorrelationService
+from kafka_mcp.domain.models import KafkaMessage
 
 
 class MockConsumer:

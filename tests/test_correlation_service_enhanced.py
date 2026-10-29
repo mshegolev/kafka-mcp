@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import re
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, Mock
+from unittest.mock import Mock
 
 import pytest
 

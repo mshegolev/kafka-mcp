@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from kafka_mcp.adapters.inbound.cli import run_correlate_messages
-from kafka_mcp.adapters.inbound.lib import KafkaClient
 from kafka_mcp.domain.models import KafkaMessage
 
 
