@@ -12,8 +12,8 @@ cleanly (never fails/errors) when the mTLS broker + client-cert env vars
 are absent — so CI without a broker stays green.
 
 A working staging mTLS contour was proven this session
-(broker 10.35.158.66:9094, stage certs, SECURITY_PROTOCOL=SSL, via
-``kafka-mcp list-topics`` / ``describe-topic eord``). The broker address
+(broker broker.example.com:9094, stage certs, SECURITY_PROTOCOL=SSL, via
+``kafka-mcp list-topics`` / ``describe-topic orders``). The broker address
 and cert paths are read from the environment; NO cert material is
 committed to the repo (T-11-03).
 

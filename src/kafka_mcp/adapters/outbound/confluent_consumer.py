@@ -59,8 +59,8 @@ class ConnectionErrorRecorder:
     "no messages matched".
 
     Observed on ep-stage 2026-08-06: the broker was rejecting the client
-    certificate (the pod carried ``CN=escart`` where the working clients carry
-    ``CN=eord``), yet a search over that broker returned an empty result with
+    certificate (the pod carried ``CN=client-a`` where the working clients carry
+    ``CN=client-b``), yet a search over that broker returned an empty result with
     no exception and not one log line. Downstream, "empty" means *there is no
     such data* — the operator looks in the wrong place, sometimes for days.
     Telling "no data" apart from "no connection" is the whole job here, so the

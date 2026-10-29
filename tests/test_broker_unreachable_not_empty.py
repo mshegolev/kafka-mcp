@@ -9,7 +9,7 @@ client library: ``poll()`` returned ``None`` until the caller's budget ran out a
 finished normally with an empty list.
 
 Observed on ep-stage 2026-08-06: the broker was rejecting the client certificate (the pod
-carried ``CN=escart`` where working clients carry ``CN=eord``) and the consuming service
+carried ``CN=client-a`` where working clients carry ``CN=client-b``) and the consuming service
 recorded Kafka as ``status=empty`` — no exception, no log line, nothing to investigate. The
 search sat in librdkafka's retry loop for 352 seconds and still reported "no data".
 

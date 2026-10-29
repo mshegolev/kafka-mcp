@@ -20,7 +20,7 @@ tech_debt: []
 human_verification:
   count: 1
   items:
-    - "MTLS-02 exercises a real handshake only when the mTLS broker + cert env vars are provided (proven this session against staging 10.35.158.66:9094). CI/default runs skip it by design; a live run is optional manual validation."
+    - "MTLS-02 exercises a real handshake only when the mTLS broker + cert env vars are provided (proven this session against staging broker.example.com:9094). CI/default runs skip it by design; a live run is optional manual validation."
 ---
 
 # Phase 11 Verification — mTLS Transport Hardening
@@ -31,7 +31,7 @@ human_verification:
 
 - **Full suite:** `uv run python -m pytest -m 'not integration'` → **331 passed, 1 skipped, 27 deselected**. (The integration mTLS test is deselected by the default `not integration` marker and skips cleanly when run without creds.)
 - **MTLS-01** (config → librdkafka `ssl.*` on consumer AND admin): the real gap was the AdminClient conf — the pre-existing tests only inspected the Consumer conf. New parametrized assertions cover both builders. The adapter code already existed; this phase locked it behind tests.
-- **MTLS-02** (real-broker e2e): env-gated integration test added; skips without creds, never fails the default/CI run. The staging mTLS contour was proven live this session (`kafka-mcp list-topics` / `describe-topic eord` over `SECURITY_PROTOCOL=SSL`).
+- **MTLS-02** (real-broker e2e): env-gated integration test added; skips without creds, never fails the default/CI run. The staging mTLS contour was proven live this session (`kafka-mcp list-topics` / `describe-topic orders` over `SECURITY_PROTOCOL=SSL`).
 - **MTLS-03** (docs): README mTLS section added.
 
 ## Notes

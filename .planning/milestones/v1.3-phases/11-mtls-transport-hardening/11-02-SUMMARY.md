@@ -91,7 +91,7 @@ None — plan executed exactly as written. The single file `tests/integration/te
 
 ## User Setup Required
 To actually run (not skip) the test, provide the mTLS contour via env:
-`KAFKA_MCP_MTLS_TEST_BOOTSTRAP` (or `KAFKA_MCP_BOOTSTRAP_SERVERS`), `KAFKA_MCP_SSL_CERTIFICATE_LOCATION`, `KAFKA_MCP_SSL_KEY_LOCATION`, `KAFKA_MCP_SSL_CA_LOCATION` (and optionally `KAFKA_MCP_SSL_KEY_PASSWORD`, `KAFKA_MCP_MTLS_TEST_TOPIC`). Proven staging contour: broker `10.35.158.66:9094` with stage certs, `SECURITY_PROTOCOL=SSL`.
+`KAFKA_MCP_MTLS_TEST_BOOTSTRAP` (or `KAFKA_MCP_BOOTSTRAP_SERVERS`), `KAFKA_MCP_SSL_CERTIFICATE_LOCATION`, `KAFKA_MCP_SSL_KEY_LOCATION`, `KAFKA_MCP_SSL_CA_LOCATION` (and optionally `KAFKA_MCP_SSL_KEY_PASSWORD`, `KAFKA_MCP_MTLS_TEST_TOPIC`). Proven staging contour: broker `broker.example.com:9094` with stage certs, `SECURITY_PROTOCOL=SSL`.
 
 ## Next Phase Readiness
 - MTLS-02 delivered and verified (env-gated, skips clean). Ready for the remaining Phase 11 requirements (MTLS-01/03) and milestone v1.3 packaging work.

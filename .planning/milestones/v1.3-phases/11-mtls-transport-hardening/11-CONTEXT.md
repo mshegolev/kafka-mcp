@@ -37,8 +37,8 @@ Out of scope: SASL end-to-end, Schema Registry mTLS, any produce/write path.
 - Integration test: gate behind an env-guarded marker (e.g. skip unless a
   `KAFKA_MCP_BOOTSTRAP_SERVERS` + certs are provided), mirroring the existing
   real-broker E2E contour from v1.1 Phase 6. A working staging mTLS contour
-  exists (broker `10.35.158.66:9094`, stage certs, `SECURITY_PROTOCOL=SSL`),
-  proven this session via `kafka-mcp list-topics` / `describe-topic eord`.
+  exists (broker `broker.example.com:9094`, stage certs, `SECURITY_PROTOCOL=SSL`),
+  proven this session via `kafka-mcp list-topics` / `describe-topic orders`.
 - README: add an mTLS subsection under Install/Config (env vars, cert paths,
   `SECURITY_PROTOCOL=SSL`, key-password handling; never commit real certs/keys).
 </decisions>
